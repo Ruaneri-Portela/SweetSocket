@@ -57,7 +57,7 @@ void processRevc(char *data, uint64_t size, struct socketGlobalContext *ctx, str
 
 	int64_t fileSize = 0;
 
-#ifdef _WIN32 || _WIN64
+#ifdef WINSWEETSOCKET
 	HANDLE hFile = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 	GetFileSizeEx(hFile, (PLARGE_INTEGER)(&fileSize));
 	CloseHandle(hFile);
