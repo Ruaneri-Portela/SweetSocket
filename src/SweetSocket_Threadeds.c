@@ -8,122 +8,104 @@ SWEETTHREAD_RETURN sendSocket(void* arg)
 		struct dataPool* current = sendContext->connection->send;
 		while (current != NULL)
 		{
-			int32_t sended = send(sendContext->connection->client->socket, current->data, current->size, 0);
-			sendContext->connection->send = current->next;
-			free(current->data);
-			free(current);
-			if (sended == 0)
-			{
-				// Connection closed
-				closesocket(sendContext->connection->client->socket);
-				break;
+			if (internalSend(current->data, current->size, sendContext->connection->client->socket)) {
+				sendContext->connection->send = current->next;
+				free(current->data);
+				free(current);
+				current = sendContext->connection->send;
+				continue;
 			}
-			if (sended == SOCKET_ERROR)
-			{
-				// Failed
-				closesocket(sendContext->connection->client->socket);
-				break;
-			}
-			current = sendContext->connection->send;
+			break;
 		}
 		sweetThread_Sleep(10);
 	}
-	if (sendContext->connection->closing == false)
+	if (!sendContext->connection->closing)
 	{
-		sendContext->context->connectionsAlive--;
-		sendContext->connection->closing = true;
+		closeClient(sendContext->context, sendContext->connection->id);
 	}
+	free(arg);
 	SWEETTHREAD_RETURN_VALUE(1);
 }
 
 SWEETTHREAD_RETURN reciveScoket(void* arg)
 {
 	struct intoContextSocketDataThread* reciveContext = (struct intoContextSocketDataThread*)arg;
-	void* data = NULL;
+	char* data = NULL;
 	void* basePointer = NULL;
-	uint64_t size = NULL;
+	uint64_t size = 0;
 	uint64_t permSize;
 	bool isHeader = true;
 	if (reciveContext->context->useHeader) {
-		data = malloc(sizeof(struct dataHeader));
+		data = malloc(sizeof(struct dataHeader) + 1);
 		size = sizeof(struct dataHeader);
 	}
 	else {
-		data = malloc(SWEETSOCKET_BUFFER_SIZE);
+		data = malloc(SWEETSOCKET_BUFFER_SIZE + 1);
 		size = SWEETSOCKET_BUFFER_SIZE;
 	}
 	permSize = size;
 	while (true)
 	{
-		int32_t reviced = recv(reciveContext->connection->client->socket, data, size, 0);
-		if (reciveContext->context->status != STATUS_INIT)
-		{
-			// Procedure to close the server
-			free(data);
+		memset(data, 0, size + 1);
+		int64_t recived = internalRecv(data, size, reciveContext->connection->client->socket);
+		if (reciveContext->context->status != STATUS_INIT || recived == 0)
 			break;
-		}
-		if (reviced == 0)
-		{
-			// Connection closed
-			closesocket(reciveContext->connection->client->socket);
-			free(data);
-			break;
-		}
-		if (reviced == SOCKET_ERROR)
-		{
-			// Failed
-			closesocket(reciveContext->connection->client->socket);
-			free(data);
-			break;
-		}
 		if (reciveContext->context->useHeader) {
 			if (isHeader)
 			{
 				struct dataHeader* header = (struct dataHeader*)data;
-				data = malloc(header->size);
+				data = malloc(header->size + 1);
 				size = header->size;
 				free(header);
 				isHeader = false;
 			}
 			continue;
 		}
-		if (basePointer == NULL && reviced == size) {
-			uint32_t toRevice;
+		if (basePointer == NULL && recived == size) {
+			u_long toRevice;
 			ioctlsocket(reciveContext->connection->client->socket, FIONREAD, &toRevice);
 			if (toRevice > 0) {
-				basePointer = realloc(data, size + toRevice);
+				basePointer = realloc(data, size + toRevice + 1);
 				data = (char*)basePointer + size;
 				size = toRevice;
 			}
 			continue;
 		}
-		struct dataPool* newNode = (struct dataPool*)malloc(sizeof(struct dataPool));
-		newNode->data = (basePointer == NULL ? data : basePointer);
-		newNode->size = size;
-		newNode->next = NULL;
-		if (reciveContext->connection->revice == NULL)
+		if (reciveContext->function != NULL)
 		{
-			reciveContext->connection->revice = newNode;
+			void* ptr = (basePointer == NULL ? data : basePointer);
+			uint64_t dataSize = (basePointer == NULL ? recived : (reciveContext->context->useHeader ? recived : recived + permSize));
+			reciveContext->function(ptr, dataSize, reciveContext->context, reciveContext->connection, reciveContext->connection);
 		}
-		else
-		{
-			struct dataPool* current = reciveContext->connection->revice;
-			while (current->next != NULL)
+		else {
+			struct dataPool* newNode = (struct dataPool*)malloc(sizeof(struct dataPool));
+			newNode->data = (basePointer == NULL ? data : basePointer);
+			newNode->size = size;
+			newNode->next = NULL;
+			if (reciveContext->connection->revice == NULL)
 			{
-				current = current->next;
+				reciveContext->connection->revice = newNode;
 			}
-			current->next = newNode;
+			else
+			{
+				struct dataPool* current = reciveContext->connection->revice;
+				while (current->next != NULL)
+				{
+					current = current->next;
+				}
+				current->next = newNode;
+			}
 		}
-		data = malloc(permSize);
+		data = malloc(permSize + 1);
 		size = permSize;
 		isHeader = true;
 		basePointer = NULL;
 	}
-	if (reciveContext->connection->closing == false)
+	if (!reciveContext->connection->closing)
 	{
-		reciveContext->context->connectionsAlive--;
-		reciveContext->connection->closing = true;
+		closeClient(reciveContext->context, reciveContext->connection->id);
 	}
+	free(arg);
 	SWEETTHREAD_RETURN_VALUE(1);
 }
 
@@ -157,13 +139,16 @@ SWEETTHREAD_RETURN acceptSocket(void* arg)
 		acceptContext->context->connectionsAlive++;
 		struct socketClients* newClient = (struct socketClients*)calloc(1, sizeof(struct socketClients));
 		newClient->client = client;
+		newClient->id = acceptContext->context->minClientID++;
 		if (acceptContext->connection->enableRecivePool)
 		{
 			// Start recive thread
 			struct intoContextSocketDataThread* reciveContext = (struct intoContextSocketDataThread*)calloc(1, sizeof(struct intoContextSocketDataThread));
 			reciveContext->connection = newClient;
 			reciveContext->context = acceptContext->context;
-			reciveContext->connection->reciveThread = sweetThread_CreateThread(reciveScoket, reciveContext, true);
+			reciveContext->function = acceptContext->functionRecv;
+			reciveContext->intoExternaParm = acceptContext->intoExternaParmRecv;
+			reciveContext->connection->reciveThread = sweetThread_CreateThread(reciveScoket, (void *)reciveContext, true);
 		}
 		if (acceptContext->connection->enableSendPool)
 		{
@@ -171,16 +156,18 @@ SWEETTHREAD_RETURN acceptSocket(void* arg)
 			struct intoContextSocketDataThread* sendContext = (struct intoContextSocketDataThread*)calloc(1, sizeof(struct intoContextSocketDataThread));
 			sendContext->connection = newClient;
 			sendContext->context = acceptContext->context;
-			sendContext->connection->sendThread = sweetThread_CreateThread(sendSocket, sendContext, true);
+			sendContext->function = acceptContext->functionSend;
+			sendContext->intoExternaParm = acceptContext->intoExternaParmSend;
+			sendContext->connection->sendThread = sweetThread_CreateThread(sendSocket, (void *)sendContext, true);
 		}
 		//
 		bool findMinorId = false;
-		if (acceptContext->connection->clients == NULL)
+		if (acceptContext->context->clients == NULL)
 		{
-			acceptContext->connection->clients = newClient;
+			acceptContext->context->clients = newClient;
 			continue;
 		}
-		for (struct socketClients* current = acceptContext->connection->clients; current != NULL; current = current->next)
+		for (struct socketClients* current = acceptContext->context->clients; current != NULL; current = current->next)
 		{
 			if (current->next == NULL)
 			{
@@ -189,5 +176,6 @@ SWEETTHREAD_RETURN acceptSocket(void* arg)
 			}
 		}
 	}
+	free(arg);
 	SWEETTHREAD_RETURN_VALUE(1);
 }

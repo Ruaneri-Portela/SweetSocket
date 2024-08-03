@@ -1,10 +1,10 @@
 #include "SweetThread.h"
 
-struct threadIdentifyer sweetThread_CreateThread(int32_t (*funcion)(void *functionParamets), void *argument, bool startNow)
+struct threadIdentifyer sweetThread_CreateThread(int32_t(*function)(void *functionParamets), void *argument, bool startNow)
 {
     struct threadIdentifyer newThread;
     DWORD initThreadParamets = startNow ? 0 : CREATE_SUSPENDED;
-    newThread.address = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)funcion, argument, initThreadParamets, &newThread.id);
+    newThread.address = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)function, argument, initThreadParamets, &newThread.id);
     return newThread;
 };
 
@@ -15,7 +15,7 @@ int32_t sweetThread_Join(struct threadIdentifyer thread, uint32_t milliseconds)
 
 bool sweetThread_GetExitCode(struct threadIdentifyer thread, int32_t *exitCode)
 {
-    return GetExitCodeThread(thread.address, exitCode);
+    return GetExitCodeThread(thread.address, (LPDWORD)exitCode);
 };
 
 void sweetThread_Resume(struct threadIdentifyer thread)
