@@ -209,6 +209,8 @@ EXPORT bool closeClient(struct socketGlobalContext *context, enum applyOn client
 			context->clients = current->next;
 		void *next = current->next;
 		current->closing = true;
+		if (current->client->addr != NULL)
+			free(current->client->addr);
 		shutdown(current->client->socket, SD_BOTH);
 		closesocket(current->client->socket);
 		current->client->socket = -1;
@@ -220,11 +222,13 @@ EXPORT bool closeClient(struct socketGlobalContext *context, enum applyOn client
 		free(current);
 		current = next;
 		context->connectionsAlive--;
+		if (clientID != APPLY_ALL)
+			break;
 	}
 	return true;
 }
 
-EXPORT bool sendData(void *data, uint64_t size, struct socketGlobalContext *context, enum applyOn clientID)
+EXPORT bool sendData(const char *data, uint64_t size, struct socketGlobalContext *context, enum applyOn clientID)
 {
 	if (isNotActiveConnection(context))
 		return false;
@@ -299,8 +303,37 @@ EXPORT bool reviceData(struct socketGlobalContext *context, enum applyOn clientI
 	return false;
 }
 
+EXPORT void resolvePeer(struct socketClients *client)
+{
+	if (client == NULL || client->client == NULL || client->client->socket == INVALID_SOCKET || client->client->addr != NULL)
+		return;
+	struct sockaddr_storage localAddr;
+	int addrLen = sizeof(localAddr);
+	getpeername(client->client->socket, (struct sockaddr *)&localAddr, &addrLen);
+	if (localAddr.ss_family == AF_INET)
+	{
+		struct sockaddr_in localAddr4;
+		addrLen = sizeof(localAddr4);
+		client->client->addr = (char *)malloc(INET_ADDRSTRLEN);
+		getpeername(client->client->socket, (struct sockaddr *)&localAddr4, &addrLen);
+		inet_ntop(AF_INET, (struct sockaddr *)&localAddr4.sin_addr, client->client->addr, INET_ADDRSTRLEN);
+		client->client->type = AF_INET;
+		client->client->port = localAddr4.sin_port;
+	}
+	else if (localAddr.ss_family == AF_INET6)
+	{
+		struct sockaddr_in6 localAddr6;
+		addrLen = sizeof(localAddr6);
+		client->client->addr = (char *)malloc(INET6_ADDRSTRLEN);
+		getpeername(client->client->socket, (struct sockaddr *)&localAddr6, &addrLen);
+		inet_ntop(AF_INET6, (struct sockaddr *)&localAddr6.sin6_addr, client->client->addr, INET6_ADDRSTRLEN);
+		client->client->type = AF_INET6;
+		client->client->port = localAddr6.sin6_port;
+	}
+}
+
 //	Above is interal send and recive commands, this is not exported
-bool internalSend(void *data, uint64_t size, SOCKET id)
+bool internalSend(const char *data, uint64_t size, SOCKET id)
 {
 	int64_t sended = send(id, data, size, 0);
 	if (sended == 0)

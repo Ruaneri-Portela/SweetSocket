@@ -43,14 +43,35 @@ libExport: $(LIBA)
 $(LIBA): $(OBJS)
 	ar rcs $@ $^
 
+HTTPDIR = examples/http
+HTTPSRC =  $(wildcard $(HTTPDIR)/*.c)
+HTTPOUTDIR = $(OUT_DIR)/http
+HTTPOBJS = $(addprefix $(HTTPOUTDIR)/, $(notdir $(HTTPSRC:.c=.o)))
 HTTPTARGET = $(OUT_DIR)/http$(EXEC)
-HTTPCODE = examples/http/http.c
+
+
 http: all $(HTTPTARGET)
 
-$(HTTPTARGET): $(HTTPCODE) $(LIBA)
-	$(CC) $(CFLAGS) -o $@ $< -L$(OUT_DIR) -l$(LIBNAME) -I$(SRC_DIR)
+$(HTTPTARGET): $(HTTPOBJS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LIBA) $(LDFLAGS)
+
+$(HTTPOUTDIR)/%.o: $(HTTPDIR)/%.c | $(HTTPOUTDIR)
+	$(CC) $(CFLAGS) -c -o $@ $< -I$(SRC_DIR)
+
+$(HTTPOUTDIR):
+	mkdir -p $(HTTPOUTDIR)
+
+clean-http:
+	rm -f $(HTTPTARGET) $(HTTPOUTDIR)/*.o
 
 clean:
-	rm -f $(OUT_DIR)/*.o $(TARGET) $(LIBA) $(HTTPTARGET)
+	rm -f $(OUT_DIR)/*.o $(TARGET) $(LIBA)
+	make clean-http
+
+http-rebuild: clean-http http
+	echo "Rebuild http"
+
+all-rebuild: clean all
+	echo "Rebuild all"
 
 .PHONY: all clean

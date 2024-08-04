@@ -1,5 +1,4 @@
 #if defined(_WIN32) || defined(_WIN64)
-#define _CRT_SECURE_NO_WARINIGS
 #define WINSWEETSOCKET
 #define WIN32_LEAN_AND_MEAN
 #undef UNICODE
@@ -46,7 +45,8 @@ enum packetType
 	PACKET_CLOSE
 };
 
-enum poolBehaviour {
+enum poolBehaviour
+{
 	NO_POOL = 0,
 	ONLY_RECIVE,
 	ONLY_SEND,
@@ -56,15 +56,15 @@ enum poolBehaviour {
 struct socketData
 {
 	uint8_t type;
-	char* addr;
+	char *addr;
 	uint16_t port;
 	uint64_t socket;
 };
 
 struct sockets
 {
-	struct socketConnection* top;
-	struct socketConnection* base;
+	struct socketConnection *top;
+	struct socketConnection *base;
 	uint64_t size;
 };
 
@@ -76,21 +76,21 @@ struct dataHeader
 
 struct dataPool
 {
-	char* data;
+	char *data;
 	uint64_t size;
-	struct dataPool* next;
+	struct dataPool *next;
 };
 
 struct socketClients
 {
-	struct socketData* client;
+	struct socketData *client;
 	struct threadIdentifyer reciveThread;
 	struct threadIdentifyer sendThread;
-	struct dataPool* revice;
-	struct dataPool* send;
+	struct dataPool *revice;
+	struct dataPool *send;
 	uint64_t id;
 	bool closing;
-	struct socketClients* next;
+	struct socketClients *next;
 };
 
 struct socketConnection
@@ -98,8 +98,8 @@ struct socketConnection
 	uint64_t id;
 	struct socketData socket;
 	struct threadIdentifyer acceptThread;
-	struct socketConnection* next;
-	struct socketConnection* previous;
+	struct socketConnection *next;
+	struct socketConnection *previous;
 	bool enableRecivePool;
 	bool enableSendPool;
 };
@@ -112,59 +112,59 @@ struct socketGlobalContext
 	int64_t connectionsAlive;
 	int64_t maxConnections;
 	int64_t minClientID;
-	struct socketClients* clients;
+	struct socketClients *clients;
 	bool useHeader;
 };
 
 struct acceptIntoContextSocket
 {
-	struct socketGlobalContext* context;
-	struct socketConnection* connection;
-	void (*functionSend)(void*, uint64_t, struct socketGlobalContext*, struct socketClients*, void*);
-	void* intoExternaParmRecv;
-	void (*functionRecv)(void*, uint64_t, struct socketGlobalContext*, struct socketClients*, void*);
-	void* intoExternaParmSend;
+	struct socketGlobalContext *context;
+	struct socketConnection *connection;
+	void (*functionSend)(void *, uint64_t, struct socketGlobalContext *, struct socketClients *, void *);
+	void *intoExternaParmRecv;
+	void (*functionRecv)(void *, uint64_t, struct socketGlobalContext *, struct socketClients *, void *);
+	void *intoExternaParmSend;
 };
 
 struct intoContextSocketDataThread
 {
-	struct socketGlobalContext* context;
-	struct socketClients* connection;
-	void (*function)(void*, uint64_t, struct socketGlobalContext*, struct socketClients*, void*);
-	void* intoExternaParm;
+	struct socketGlobalContext *context;
+	struct socketClients *connection;
+	void (*function)(void *, uint64_t, struct socketGlobalContext *, struct socketClients *, void *);
+	void *intoExternaParm;
 };
 
-EXPORT struct socketGlobalContext* initSocketGlobalContext(enum socketType type);
+EXPORT struct socketGlobalContext *initSocketGlobalContext(enum socketType type);
 
-EXPORT bool closeSocketGlobalContext(struct socketGlobalContext** context);
+EXPORT bool closeSocketGlobalContext(struct socketGlobalContext **context);
 
-EXPORT int64_t pushNewConnection(struct sockets* conn, struct socketConnection* newSocket);
+EXPORT int64_t pushNewConnection(struct sockets *conn, struct socketConnection *newSocket);
 
-EXPORT bool removeConnectionById(struct sockets* conn, uint64_t id);
+EXPORT bool removeConnectionById(struct sockets *conn, uint64_t id);
 
-EXPORT struct socketConnection* createSocket(struct socketGlobalContext* context, uint8_t type, const char* addr, uint16_t port);
+EXPORT struct socketConnection *createSocket(struct socketGlobalContext *context, uint8_t type, const char *addr, uint16_t port);
 
-EXPORT bool openSocket(char* addr, int16_t port, struct addrinfo* hints, struct addrinfo** result, SOCKET* socketIdentifyer);
+EXPORT bool openSocket(char *addr, int16_t port, struct addrinfo *hints, struct addrinfo **result, SOCKET *socketIdentifyer);
 
-EXPORT bool closeSocket(struct socketGlobalContext* context, enum applyOn serverID);
+EXPORT bool closeSocket(struct socketGlobalContext *context, enum applyOn serverID);
 
-EXPORT bool closeClient(struct socketGlobalContext* context, enum applyOn clientID);
+EXPORT bool closeClient(struct socketGlobalContext *context, enum applyOn clientID);
 
-EXPORT bool sendData(void *data, uint64_t size, struct socketGlobalContext *context, enum applyOn clientID);
+EXPORT bool sendData(const char *data, uint64_t size, struct socketGlobalContext *context, enum applyOn clientID);
 
-EXPORT bool reviceData(struct socketGlobalContext* context, enum applyOn clientID, struct dataPool* target);
+EXPORT bool reviceData(struct socketGlobalContext *context, enum applyOn clientID, struct dataPool *target);
 
+EXPORT bool startConnection(struct socketGlobalContext *context, enum applyOn serverID);
 
-EXPORT bool startConnection(struct socketGlobalContext* context, enum applyOn serverID);
+EXPORT bool enablePools(struct socketGlobalContext *context, enum applyOn clientID, bool enableRecivePool, bool enableSendPool);
 
-EXPORT bool enablePools(struct socketGlobalContext* context, enum applyOn clientID, bool enableRecivePool, bool enableSendPool);
+EXPORT bool startAccepting(struct socketGlobalContext *context, enum applyOn serverID, void *functionSend, void *functionRecv, void *parmsRecv, void *parmsSend, enum poolBehaviour pool);
 
+EXPORT bool startListening(struct socketGlobalContext *context, enum applyOn serverID);
 
-EXPORT bool startAccepting(struct socketGlobalContext* context, enum applyOn serverID, void* functionSend, void* functionRecv, void* parmsRecv, void* parmsSend, enum poolBehaviour pool);
-
-EXPORT bool startListening(struct socketGlobalContext* context, enum applyOn serverID);
+EXPORT void resolvePeer(struct socketClients *client);
 
 //	Above is interal send and recive commands, this is not exported
-bool internalSend(void* data, uint64_t size, SOCKET id);
+bool internalSend(const char *data, uint64_t size, SOCKET id);
 
-int64_t internalRecv(void* data, uint64_t size, SOCKET id);
+int64_t internalRecv(void *data, uint64_t size, SOCKET id);

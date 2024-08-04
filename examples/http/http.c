@@ -1,121 +1,187 @@
-#define _CRT_SECURE_NO_WARNINGS
-#include <signal.h>
-#include <stdio.h>
-#include <SweetSocket.h>
-
-#define PATHSIZE 512
-#define MAXFILESIZE 524288
+#include "http.h"
 int closing = 0;
 
-void extractPath(const char *request, char *path, size_t path_size)
+void HTTP_handleSigint(int sig)
 {
-	const char *start = strchr(request, ' ') + 1;
-	if (start == NULL)
-	{
-		strncpy(path, "", path_size);
-		return;
-	}
-
-	const char *end = strchr(start, ' ');
-	if (end == NULL)
-	{
-		strncpy(path, "", path_size);
-		return;
-	}
-
-	size_t length = end - start;
-	if (length >= path_size)
-	{
-		length = path_size - 1;
-	}
-	strncpy(path + 1, start, length);
-	path[length + 1] = '\0';
-	path[0] = '.';
+	closing = 1;
 }
 
-void processRevc(char *data, uint64_t size, struct socketGlobalContext *ctx, struct socketClients *thisClient, void *parms)
+void HTTP_callbackProcessRequest(char *data, uint64_t size, struct socketGlobalContext *ctx, struct socketClients *thisClient, void *parms)
 {
+	struct HTTPServerEnv *server = (struct HTTPServerEnv *)parms;
+	int64_t requestedStartFile, requestedEndFile;
+	HANDLE hFile = INVALID_HANDLE_VALUE;
 	char path[PATHSIZE];
-	extractPath(data, path, sizeof(path));
+	char header[HEADER_SIZE];
+	char *verb = HTTP_getVerb(data, sizeof(verb));
 
-	if (strcmp(path, "./") == 0 || strcmp(path, "/") == 0)
+	// Extrair informações da requisição PATH e RANGE
+	HTTP_extractRange(data, &requestedStartFile, &requestedEndFile);
+	HTTP_extractPath(data, path, sizeof(path));
+
+	// Log
+	if (server->logFile != NULL)
 	{
-		strcpy(path, "index.html");
+		HTTP_logRequest(server, verb, path, thisClient);
 	}
 
-	FILE *file = fopen(path, "rb");
-	if (file == NULL)
+	while (HTTP_isDirectory(path))
+	{
+		// Tentar arquivo padrão
+		char *defaultPage = (char *)malloc(strlen(path) + strlen(server->defaultPage) + 1);
+		strcpy(defaultPage, path);
+		strcat(defaultPage, server->defaultPage);
+		if (HTTP_isFile(defaultPage))
+		{
+			strcpy(path, defaultPage);
+			free(defaultPage);
+			break;
+		}
+		// Listagem de diretório
+		if (server->allowDirectoryListing == false)
+		{
+			const char *error_response = "HTTP/1.1 403 Forbidden\r\n"
+										 "Content-Type: text/html\r\n"
+										 "Content-Length: 44\r\n"
+										 "Server: HttpSweetSocket\r\n"
+										 "\r\n"
+										 "<h1>403 Forbidden</h1><p>Directory listing not allowed.</p>";
+			sendData(error_response, strlen(error_response), ctx, thisClient->id);
+			free(defaultPage);
+			free(verb);
+			return;
+		}
+		char *html = NULL;
+		size_t htmlSize = HTTP_htmlListDir(path, &html);
+		snprintf(header, sizeof(header),
+				 "HTTP/1.1 200 OK\r\n"
+				 "Content-Type: text/html\r\n"
+				 "Content-Length: %lld\r\n"
+				 "Server: HttpSweetSocket\r\n"
+				 "\r\n",
+				 htmlSize);
+		sendData(header, strlen(header), ctx, thisClient->id);
+		sendData(html, htmlSize, ctx, thisClient->id);
+		free(html);
+		free(defaultPage);
+		free(verb);
+		return;
+	}
+	hFile = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+
+	if (hFile == INVALID_HANDLE_VALUE)
 	{
 		const char *error_response = "HTTP/1.1 404 Not Found\r\n"
 									 "Content-Type: text/html\r\n"
 									 "Content-Length: 44\r\n"
+									 "Server: HttpSweetSocket\r\n"
 									 "\r\n"
 									 "<h1>404 Not Found</h1><p>File not found.</p>";
 		sendData(error_response, strlen(error_response), ctx, thisClient->id);
+		free(verb);
 		return;
 	}
 
-	int64_t fileSize = 0;
-
-#ifdef WINSWEETSOCKET
-	HANDLE hFile = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-	GetFileSizeEx(hFile, (PLARGE_INTEGER)(&fileSize));
-	CloseHandle(hFile);
-#endif
-
-	char *type;
-	if (strstr(path, ".html"))
+	LARGE_INTEGER fileSize;
+	if (!GetFileSizeEx(hFile, &fileSize))
 	{
-		type = "text/html";
-	}
-	else if (strstr(path, ".mp4"))
-	{
-		type = "video/mp4";
-	}
-	else if (strstr(path, ".mkv"))
-	{
-		type = "video/x-matroska";
-	}
-	else
-	{
-		type = "text/plain";
-	}
-
-	char header[256];
-	snprintf(header, sizeof(header),
-			 "HTTP/1.1 200 OK\r\n"
-			 "Content-Type: %s\r\n"
-			 "Content-Length: %lld\r\n"
-			 "\r\n",
-			 type,
-			 (long long)fileSize);
-	sendData(header, strlen(header), ctx, thisClient->id);
-
-	// Envio do arquivo em partes
-	size_t sent = (fileSize > MAXFILESIZE) ? MAXFILESIZE : fileSize;
-	char *fileData = (char *)malloc(sent);
-	if (fileData == NULL)
-	{
-		fclose(file);
+		CloseHandle(hFile);
 		const char *error_response = "HTTP/1.1 500 Internal Server Error\r\n"
 									 "Content-Type: text/html\r\n"
 									 "Content-Length: 50\r\n"
+									 "Server: HttpSweetSocket\r\n"
+									 "\r\n"
+									 "<h1>500 Internal Server Error</h1><p>Cannot get file size.</p>";
+		sendData(error_response, strlen(error_response), ctx, thisClient->id);
+		free(verb);
+		return;
+	}
+
+	const char *type = HTTP_mineType(path, server);
+	const char *command = "200 OK";
+	char *options = NULL;
+
+	if (requestedStartFile != -1 || requestedEndFile != -1)
+	{
+		char range[256];
+		int64_t physicalFileSize = fileSize.QuadPart;
+		requestedEndFile = (requestedEndFile == -1) ? fileSize.QuadPart - 1 : requestedEndFile;
+		snprintf(range, sizeof(range),
+				 "Accept-Ranges: bytes\r\n"
+				 "Content-Range: bytes %lld-%lld/%lld\r\n",
+				 requestedStartFile,
+				 requestedEndFile,
+				 fileSize.QuadPart);
+		fileSize.QuadPart = requestedEndFile - requestedStartFile + 1;
+		if (fileSize.QuadPart != physicalFileSize)
+		{
+			command = "206 Partial Content";
+		}
+		LARGE_INTEGER liOffset;
+		liOffset.QuadPart = requestedStartFile;
+		if (SetFilePointerEx(hFile, liOffset, NULL, FILE_BEGIN) == 0)
+		{
+			CloseHandle(hFile);
+			const char *error_response = "HTTP/1.1 500 Internal Server Error\r\n"
+										 "Content-Type: text/html\r\n"
+										 "Content-Length: 50\r\n"
+										 "Server: HttpSweetSocket\r\n"
+										 "\r\n"
+										 "<h1>500 Internal Server Error</h1><p>Cannot seek file.</p>";
+			sendData(error_response, strlen(error_response), ctx, thisClient->id);
+			free(verb);
+			return;
+		}
+		options = range;
+	}
+
+	snprintf(header, sizeof(header),
+			 "HTTP/1.1 %s\r\n"
+			 "Content-Type: %s\r\n"
+			 "Content-Length: %lld\r\n"
+			 "Server: HttpSweetSocket\r\n"
+			 "%s"
+			 "\r\n",
+			 command,
+			 type,
+			 fileSize.QuadPart,
+			 options == NULL ? "" : options);
+	sendData(header, strlen(header), ctx, thisClient->id);
+
+	size_t sent = (fileSize.QuadPart > MAXFILESIZE) ? MAXFILESIZE : (size_t)fileSize.QuadPart;
+	char *fileData = (char *)malloc(sent);
+	if (fileData == NULL)
+	{
+		CloseHandle(hFile);
+		const char *error_response = "HTTP/1.1 500 Internal Server Error\r\n"
+									 "Content-Type: text/html\r\n"
+									 "Content-Length: 50\r\n"
+									 "Server: HttpSweetSocket\r\n"
 									 "\r\n"
 									 "<h1>500 Internal Server Error</h1><p>Cannot allocate memory.</p>";
 		sendData(error_response, strlen(error_response), ctx, thisClient->id);
+		free(verb);
 		return;
 	}
 
 	size_t totalSent = 0;
-	while (totalSent < fileSize)
+	while (totalSent < fileSize.QuadPart)
 	{
-		size_t toRead = (fileSize - totalSent > MAXFILESIZE) ? MAXFILESIZE : (fileSize - totalSent);
-		size_t readSize = fread(fileData, 1, toRead, file);
-		if (readSize > 0)
+		size_t toRead = (fileSize.QuadPart - totalSent > MAXFILESIZE) ? MAXFILESIZE : (size_t)(fileSize.QuadPart - totalSent);
+		DWORD readSize;
+		if (ReadFile(hFile, fileData, toRead, &readSize, NULL))
 		{
-			if (!sendData(fileData, readSize, ctx, thisClient->id))
+			if (readSize > 0)
+			{
+				if (!sendData(fileData, readSize, ctx, thisClient->id))
+					break;
+				totalSent += readSize;
+			}
+			else
+			{
+				// Erro na leitura do arquivo
 				break;
-			totalSent += readSize;
+			}
 		}
 		else
 		{
@@ -124,26 +190,38 @@ void processRevc(char *data, uint64_t size, struct socketGlobalContext *ctx, str
 		}
 	}
 
-	fclose(file);
+	CloseHandle(hFile);
 	free(fileData);
+	free(verb);
 	free(data);
-}
-
-void handleSigint(int sig)
-{
-	printf("Recebi o sinal SIGINT (%d). Encerrando...\n", sig);
-	closing = 1;
 }
 
 int main(int argc, char *argv[])
 {
+	struct HTTPServerEnv server = HTTP_loadConf();
 	struct socketGlobalContext *context = initSocketGlobalContext(SOCKET_SERVER);
 	context->useHeader = false;
-	pushNewConnection(&context->connections, createSocket(context, AF_INET, NULL, 9950));
-	pushNewConnection(&context->connections, createSocket(context, AF_INET6, NULL, 9950));
+	for (char *host = server.hosts; host != NULL;)
+	{
+		char *nxtHost = strstr(host, ",");
+		if (nxtHost != NULL)
+		{
+			*nxtHost = '\0';
+			nxtHost++;
+		}
+		if (strchr(host, ':') != NULL)
+		{
+			pushNewConnection(&context->connections, createSocket(context, AF_INET6, host, server.port));
+		}
+		else if (strchr(host, '.') != NULL)
+		{
+			pushNewConnection(&context->connections, createSocket(context, AF_INET, host, server.port));
+		}
+		host = nxtHost;
+	}
 	startListening(context, APPLY_ALL);
-	startAccepting(context, APPLY_ALL, NULL, &processRevc, NULL, NULL, ONLY_RECIVE);
-	signal(SIGINT, handleSigint);
+	startAccepting(context, APPLY_ALL, NULL, &HTTP_callbackProcessRequest, &server, NULL, ONLY_RECIVE);
+	signal(SIGINT, HTTP_handleSigint);
 	printf("Pressione Ctrl-C para sair...\n");
 	while (!closing)
 	{
