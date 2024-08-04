@@ -12,33 +12,39 @@
 
 struct HTTPServerEnv
 {
-    char *root;
-    int port;
-    char *hosts;
-    char *defaultPage;
-    char *logFile;
-    char *configFile;
-    bool allowDirectoryListing;
+	char* root;
+	int port;
+	char* hosts;
+	char* defaultPage;
+	char* logFile;
+	char* configFile;
+	bool allowDirectoryListing;
 };
 
 struct HTTPServerEnv HTTP_loadConf();
 
-bool HTTP_isDirectory(const char *path);
+bool HTTP_isDirectory(const char* path);
 
-bool HTTP_isFile(const char *path);
+bool HTTP_isFile(const char* path);
 
-void HTTP_trim(char *str);
+void HTTP_trim(char* str);
 
-void HTTP_getTimeStr(char *buffer, size_t bufferSize);
+void HTTP_getTimeStr(char* buffer, size_t bufferSize, int mode);
 
-void HTTP_extractPath(const char *request, char *path, size_t path_size);
+void HTTP_extractPath(const char* request, char* path, size_t path_size);
 
-void HTTP_extractRange(const char *request, int64_t *start, int64_t *end);
+void HTTP_extractRange(const char* request, int64_t* start, int64_t* end);
 
-void HTTP_logRequest(struct HTTPServerEnv *server, const char *verb, const char *path, struct socketClients *client);
+void HTTP_logRequest(struct HTTPServerEnv* server, const char* verb, const char* path, const char* userAgent, struct socketClients* client);
 
-const char *HTTP_mineType(const char *path, struct HTTPServerEnv *server);
+void HTTP_sendHeader(const char* mineType, const char* status, uint64_t size, const char* opcionais, struct socketGlobalContext* context, int id);
 
-char *HTTP_getVerb(const char *request, size_t size);
+void HTTP_sendError(int code, const char* msg, struct socketGlobalContext* ctx, int id);
 
-size_t HTTP_htmlListDir(const char *path, char **html);
+char* HTTP_getMineType(const char* path, struct HTTPServerEnv* server);
+
+char* HTTP_getVerb(const char* request, size_t size);
+
+char* HTTP_getUserAgent(const char* resquest, size_t size);
+
+size_t HTTP_htmlListDir(const char* path, char** html);

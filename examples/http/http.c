@@ -6,204 +6,170 @@ void HTTP_handleSigint(int sig)
 	closing = 1;
 }
 
-void HTTP_callbackProcessRequest(char *data, uint64_t size, struct socketGlobalContext *ctx, struct socketClients *thisClient, void *parms)
+void HTTP_callbackProcessRequest(char* data, uint64_t size, struct socketGlobalContext* ctx, struct socketClients* thisClient, void* parms)
 {
-	struct HTTPServerEnv *server = (struct HTTPServerEnv *)parms;
+	struct HTTPServerEnv* server = (struct HTTPServerEnv*)parms;
 	int64_t requestedStartFile, requestedEndFile;
 	HANDLE hFile = INVALID_HANDLE_VALUE;
+
 	char path[PATHSIZE];
-	char header[HEADER_SIZE];
-	char *verb = HTTP_getVerb(data, sizeof(verb));
+	const char* command = "200 OK";
+	char* verb = HTTP_getVerb(data, sizeof(verb));
+	bool routineAline = true;
 
 	// Extrair informações da requisição PATH e RANGE
 	HTTP_extractRange(data, &requestedStartFile, &requestedEndFile);
 	HTTP_extractPath(data, path, sizeof(path));
 
 	// Log
+	char* userAgent = HTTP_getUserAgent(data, size);
 	if (server->logFile != NULL)
 	{
-		HTTP_logRequest(server, verb, path, thisClient);
+		HTTP_logRequest(server, verb, path, userAgent == NULL ? "" : userAgent,thisClient);
 	}
 
-	while (HTTP_isDirectory(path))
-	{
-		// Tentar arquivo padrão
-		char *defaultPage = (char *)malloc(strlen(path) + strlen(server->defaultPage) + 1);
-		strcpy(defaultPage, path);
-		strcat(defaultPage, server->defaultPage);
-		if (HTTP_isFile(defaultPage))
+	while (routineAline) {
+		// Verificar se é um diretório
+		while (HTTP_isDirectory(path))
 		{
-			strcpy(path, defaultPage);
-			free(defaultPage);
-			break;
-		}
-		// Listagem de diretório
-		if (server->allowDirectoryListing == false)
-		{
-			const char *error_response = "HTTP/1.1 403 Forbidden\r\n"
-										 "Content-Type: text/html\r\n"
-										 "Content-Length: 44\r\n"
-										 "Server: HttpSweetSocket\r\n"
-										 "\r\n"
-										 "<h1>403 Forbidden</h1><p>Directory listing not allowed.</p>";
-			sendData(error_response, strlen(error_response), ctx, thisClient->id);
-			free(defaultPage);
-			free(verb);
-			return;
-		}
-		char *html = NULL;
-		size_t htmlSize = HTTP_htmlListDir(path, &html);
-		snprintf(header, sizeof(header),
-				 "HTTP/1.1 200 OK\r\n"
-				 "Content-Type: text/html\r\n"
-				 "Content-Length: %lld\r\n"
-				 "Server: HttpSweetSocket\r\n"
-				 "\r\n",
-				 htmlSize);
-		sendData(header, strlen(header), ctx, thisClient->id);
-		sendData(html, htmlSize, ctx, thisClient->id);
-		free(html);
-		free(defaultPage);
-		free(verb);
-		return;
-	}
-	hFile = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-
-	if (hFile == INVALID_HANDLE_VALUE)
-	{
-		const char *error_response = "HTTP/1.1 404 Not Found\r\n"
-									 "Content-Type: text/html\r\n"
-									 "Content-Length: 44\r\n"
-									 "Server: HttpSweetSocket\r\n"
-									 "\r\n"
-									 "<h1>404 Not Found</h1><p>File not found.</p>";
-		sendData(error_response, strlen(error_response), ctx, thisClient->id);
-		free(verb);
-		return;
-	}
-
-	LARGE_INTEGER fileSize;
-	if (!GetFileSizeEx(hFile, &fileSize))
-	{
-		CloseHandle(hFile);
-		const char *error_response = "HTTP/1.1 500 Internal Server Error\r\n"
-									 "Content-Type: text/html\r\n"
-									 "Content-Length: 50\r\n"
-									 "Server: HttpSweetSocket\r\n"
-									 "\r\n"
-									 "<h1>500 Internal Server Error</h1><p>Cannot get file size.</p>";
-		sendData(error_response, strlen(error_response), ctx, thisClient->id);
-		free(verb);
-		return;
-	}
-
-	const char *type = HTTP_mineType(path, server);
-	const char *command = "200 OK";
-	char *options = NULL;
-
-	if (requestedStartFile != -1 || requestedEndFile != -1)
-	{
-		char range[256];
-		int64_t physicalFileSize = fileSize.QuadPart;
-		requestedEndFile = (requestedEndFile == -1) ? fileSize.QuadPart - 1 : requestedEndFile;
-		snprintf(range, sizeof(range),
-				 "Accept-Ranges: bytes\r\n"
-				 "Content-Range: bytes %lld-%lld/%lld\r\n",
-				 requestedStartFile,
-				 requestedEndFile,
-				 fileSize.QuadPart);
-		fileSize.QuadPart = requestedEndFile - requestedStartFile + 1;
-		if (fileSize.QuadPart != physicalFileSize)
-		{
-			command = "206 Partial Content";
-		}
-		LARGE_INTEGER liOffset;
-		liOffset.QuadPart = requestedStartFile;
-		if (SetFilePointerEx(hFile, liOffset, NULL, FILE_BEGIN) == 0)
-		{
-			CloseHandle(hFile);
-			const char *error_response = "HTTP/1.1 500 Internal Server Error\r\n"
-										 "Content-Type: text/html\r\n"
-										 "Content-Length: 50\r\n"
-										 "Server: HttpSweetSocket\r\n"
-										 "\r\n"
-										 "<h1>500 Internal Server Error</h1><p>Cannot seek file.</p>";
-			sendData(error_response, strlen(error_response), ctx, thisClient->id);
-			free(verb);
-			return;
-		}
-		options = range;
-	}
-
-	snprintf(header, sizeof(header),
-			 "HTTP/1.1 %s\r\n"
-			 "Content-Type: %s\r\n"
-			 "Content-Length: %lld\r\n"
-			 "Server: HttpSweetSocket\r\n"
-			 "%s"
-			 "\r\n",
-			 command,
-			 type,
-			 fileSize.QuadPart,
-			 options == NULL ? "" : options);
-	sendData(header, strlen(header), ctx, thisClient->id);
-
-	size_t sent = (fileSize.QuadPart > MAXFILESIZE) ? MAXFILESIZE : (size_t)fileSize.QuadPart;
-	char *fileData = (char *)malloc(sent);
-	if (fileData == NULL)
-	{
-		CloseHandle(hFile);
-		const char *error_response = "HTTP/1.1 500 Internal Server Error\r\n"
-									 "Content-Type: text/html\r\n"
-									 "Content-Length: 50\r\n"
-									 "Server: HttpSweetSocket\r\n"
-									 "\r\n"
-									 "<h1>500 Internal Server Error</h1><p>Cannot allocate memory.</p>";
-		sendData(error_response, strlen(error_response), ctx, thisClient->id);
-		free(verb);
-		return;
-	}
-
-	size_t totalSent = 0;
-	while (totalSent < fileSize.QuadPart)
-	{
-		size_t toRead = (fileSize.QuadPart - totalSent > MAXFILESIZE) ? MAXFILESIZE : (size_t)(fileSize.QuadPart - totalSent);
-		DWORD readSize;
-		if (ReadFile(hFile, fileData, toRead, &readSize, NULL))
-		{
-			if (readSize > 0)
+			// Tentar arquivo padrão
+			char* defaultPage = (char*)malloc(strlen(path) + strlen(server->defaultPage) + 2);
+			strcpy(defaultPage, path);
+			if (defaultPage[strlen(defaultPage) - 1] != '/')
 			{
-				if (!sendData(fileData, readSize, ctx, thisClient->id))
-					break;
-				totalSent += readSize;
+				strcat(defaultPage, "/");
 			}
-			else
+			strcat(defaultPage, server->defaultPage);
+			if (HTTP_isFile(defaultPage))
 			{
-				// Erro na leitura do arquivo
+				strcpy(path, defaultPage);
+				free(defaultPage);
 				break;
 			}
-		}
-		else
-		{
-			// Erro na leitura do arquivo
+			// Listagem de diretório
+			routineAline = false;
+			if (server->allowDirectoryListing == false)
+			{
+				HTTP_sendError(403, "<h1>403 Forbidden</h1><p>Directory listing not allowed.</p>", ctx, thisClient->id);
+				free(defaultPage);
+				break;
+			}
+			char* html = NULL;
+			size_t htmlSize = HTTP_htmlListDir(path, &html);
+			if (htmlSize == 0)
+			{
+				HTTP_sendError(404, "<h1>404 Not Found</h1><p>Directory not found.</p>", ctx, thisClient->id);
+				free(defaultPage);
+				break;
+			}
+			HTTP_sendHeader("text/html", command, htmlSize, NULL, ctx, thisClient->id);
+			sendData(html, htmlSize, ctx, thisClient->id);
+			free(html);
+			free(defaultPage);
 			break;
 		}
-	}
+		// Sair	
+		if (!routineAline)
+			break;
 
-	CloseHandle(hFile);
-	free(fileData);
+		// Quando for arquivo prosseguir
+		hFile = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+
+		if (hFile == INVALID_HANDLE_VALUE)
+		{
+			HTTP_sendError(404, "<h1>404 Not Found</h1><p>File not found.</p>", ctx, thisClient->id);
+			break;
+		}
+
+		LARGE_INTEGER fileSize;
+		if (!GetFileSizeEx(hFile, &fileSize))
+		{
+			CloseHandle(hFile);
+			HTTP_sendError(500, "<h1>500 Internal Server Error</h1><p>Cannot get file size.</p>", ctx, thisClient->id);
+			break;
+		}
+
+		// Envio de arquivo
+		char* type = HTTP_getMineType(path, server);
+		char* options = NULL;
+
+		// Verificar se é um range (parcial)
+		if (requestedStartFile != -1 || requestedEndFile != -1)
+		{
+			char range[256];
+			int64_t physicalFileSize = fileSize.QuadPart;
+			requestedEndFile = (requestedEndFile == -1) ? fileSize.QuadPart - 1 : requestedEndFile;
+			snprintf(range, sizeof(range),
+				"Accept-Ranges: bytes\r\n"
+				"Content-Range: bytes %lld-%lld/%lld\r\n",
+				requestedStartFile,
+				requestedEndFile,
+				fileSize.QuadPart);
+			fileSize.QuadPart = requestedEndFile - requestedStartFile + 1;
+			if (fileSize.QuadPart != physicalFileSize)
+			{
+				command = "206 Partial Content";
+			}
+			LARGE_INTEGER liOffset;
+			liOffset.QuadPart = requestedStartFile;
+			if (SetFilePointerEx(hFile, liOffset, NULL, FILE_BEGIN) == 0)
+			{
+				CloseHandle(hFile);
+				HTTP_sendError(500, "<h1>500 Internal Server Error</h1><p>Cannot seek file.</p>", ctx, thisClient->id);
+				break;
+			}
+			options = range;
+		}
+
+		// Enviar cabeçalho
+		HTTP_sendHeader(type, command, fileSize.QuadPart, options, ctx, thisClient->id);
+		free(type);
+		// Enviar arquivo
+		size_t sent = (fileSize.QuadPart > MAXFILESIZE) ? MAXFILESIZE : (size_t)fileSize.QuadPart;
+		char* fileData = (char*)malloc(sent);
+		if (fileData == NULL)
+		{
+			CloseHandle(hFile);
+			HTTP_sendError(500, "<h1>500 Internal Server Error</h1><p>Cannot allocate memory.</p>", ctx, thisClient->id);
+			free(verb);
+			return;
+		}
+
+		size_t totalSent = 0;
+		while (totalSent < fileSize.QuadPart)
+		{
+			size_t toRead = (fileSize.QuadPart - totalSent > MAXFILESIZE) ? MAXFILESIZE : (size_t)(fileSize.QuadPart - totalSent);
+			DWORD readSize;
+			if (ReadFile(hFile, fileData, toRead, &readSize, NULL))
+			{
+				if (readSize > 0)
+				{
+					if (!sendData(fileData, readSize, ctx, thisClient->id))
+						break;
+					totalSent += readSize;
+					continue;
+				}
+			}
+			break;
+		}
+		CloseHandle(hFile);
+		free(fileData);
+		routineAline = false;
+		break;
+	}
+	free(userAgent);
 	free(verb);
 	free(data);
 }
 
-int main(int argc, char *argv[])
+int main(int argc, char* argv[])
 {
 	struct HTTPServerEnv server = HTTP_loadConf();
-	struct socketGlobalContext *context = initSocketGlobalContext(SOCKET_SERVER);
+	struct socketGlobalContext* context = initSocketGlobalContext(SOCKET_SERVER);
 	context->useHeader = false;
-	for (char *host = server.hosts; host != NULL;)
+	for (char* host = server.hosts; host != NULL;)
 	{
-		char *nxtHost = strstr(host, ",");
+		char* nxtHost = strstr(host, ",");
 		if (nxtHost != NULL)
 		{
 			*nxtHost = '\0';
