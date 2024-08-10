@@ -50,7 +50,8 @@ SWEETTHREAD_RETURN reciveScoket(void* arg)
 	while (reciveContext->context->status == STATUS_INIT && !reciveContext->connection->closing && reciveContext->connection->client != NULL)
 	{
 		int64_t recived = internalRecv(&data, size, reciveContext->connection->client->socket);
-		if (reciveContext->context->status != STATUS_INIT || recived == 0 || reciveContext->connection->closing) {
+		if (reciveContext->context->status != STATUS_INIT || recived == 0 || reciveContext->connection->closing){
+			data = NULL;
 			break;
 		}
 		if (reciveContext->context->useHeader)

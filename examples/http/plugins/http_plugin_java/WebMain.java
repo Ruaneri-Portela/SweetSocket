@@ -6,7 +6,6 @@ public class WebMain {
     public int statusCode;
 
     public WebMain(String request) {
-        System.out.println("Java WebMain constructor called with request: " + request);
         String path = request.split(" ")[1];
         String prefix = "/java";
         if (path.startsWith(prefix)) {
