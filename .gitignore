@@ -373,3 +373,4 @@ FodyWeavers.xsd
 *.conf
 jdk-22.0.2/
 srv/
+*.class
