@@ -26,7 +26,9 @@ const struct HTTP_plugin_metadata* HTTP_loadPlugin(const wchar_t* pluginPath) {
 		return NULL;
 	}
 	// Retornar o manifest do plugin
-	return getManifest();
+	const struct HTTP_plugin_metadata* manifest = getManifest();
+	manifest->setModule(hDLL);
+	return manifest;
 }
 
 /**
@@ -38,5 +40,13 @@ void HTTP_pluginUnload(const struct HTTP_plugin_metadata* plugin) {
 	if (plugin->shutdownPoint != NULL) {
 		// Chamar o ponto de desligamento do plugin, se existir
 		plugin->shutdownPoint();
+	}
+	if (plugin->getModule != NULL) {
+		// Obter o módulo da DLL do plugin
+		HMODULE hDLL = plugin->getModule();
+		if (hDLL != NULL) {
+			// Descarregar a DLL do plugin
+			FreeLibrary(hDLL);
+		}
 	}
 }

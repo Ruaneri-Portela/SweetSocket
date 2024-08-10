@@ -11,7 +11,9 @@ struct HTTP_plugin_metadata manifest = {
 	.entryPoint = NULL,
 	.shutdownPoint = NULL,
 	.requestPoint = NULL,
-	.responsePoint = NULL
+	.responsePoint = NULL,
+	.setModule = NULL,
+	.getModule = NULL
 };
 
 struct jvm {
@@ -22,8 +24,11 @@ struct jvm {
 struct javaClass {
 	jclass cls;
 	jmethodID constructor;
-	jmethodID returnBodyMethod;
-	jmethodID returnRequestSuccessfulMethod;
+	jfieldID requestSuccessful;
+	jfieldID body;
+	jfieldID contentType;
+	jfieldID headerAppend;
+	jfieldID statusCode;
 };
 
 struct pluginClass {
@@ -31,68 +36,113 @@ struct pluginClass {
 	struct javaClass javaClass;
 };
 
+struct reqestData {
+	char* data;
+	uint64_t responseSize;
+	uint16_t responseCode;
+	char* responseType;
+	char* adictionalHeader;
+};
+
+
 struct pluginClass* plugin = NULL;
+HMODULE g_hModule = NULL;
 
 static bool loadClass() {
 	if (plugin == NULL || plugin->jvm.env == NULL) {
-		wprintf(L"JVM not initialized\n");
+		perror("JVM not initialized");
 		return false;
 	}
-
 	plugin->javaClass.cls = (*plugin->jvm.env)->FindClass(plugin->jvm.env, "WebMain");
 	if (plugin->javaClass.cls == NULL) {
-		wprintf(L"Failed to find class\n");
+		perror("Failed to find class");
 		return false;
 	}
 	plugin->javaClass.constructor = (*plugin->jvm.env)->GetMethodID(plugin->jvm.env, plugin->javaClass.cls, "<init>", "(Ljava/lang/String;)V");
 	if (plugin->javaClass.constructor == NULL) {
-		wprintf(L"Failed to find constructor\n");
+		perror("Failed to get constructor");
 		return false;
 	}
-	plugin->javaClass.returnBodyMethod = (*plugin->jvm.env)->GetMethodID(plugin->jvm.env, plugin->javaClass.cls, "returnBody", "()[B");
-	if (plugin->javaClass.returnBodyMethod == NULL) {
-		wprintf(L"Failed to find returnBody method\n");
-		return false;
-	}
-	plugin->javaClass.returnRequestSuccessfulMethod = (*plugin->jvm.env)->GetMethodID(plugin->jvm.env, plugin->javaClass.cls, "returnRequestSuccessful", "()Z");
-	if (plugin->javaClass.returnRequestSuccessfulMethod == NULL) {
-		wprintf(L"Failed to find returnRequestSuccessful method\n");
+	plugin->javaClass.requestSuccessful = (*plugin->jvm.env)->GetFieldID(plugin->jvm.env, plugin->javaClass.cls, "requestSuccessful", "Z");
+	plugin->javaClass.body = (*plugin->jvm.env)->GetFieldID(plugin->jvm.env, plugin->javaClass.cls, "body", "[B");
+	plugin->javaClass.contentType = (*plugin->jvm.env)->GetFieldID(plugin->jvm.env, plugin->javaClass.cls, "contentType", "Ljava/lang/String;");
+	plugin->javaClass.headerAppend = (*plugin->jvm.env)->GetFieldID(plugin->jvm.env, plugin->javaClass.cls, "headerAppend", "Ljava/lang/String;");
+	plugin->javaClass.statusCode = (*plugin->jvm.env)->GetFieldID(plugin->jvm.env, plugin->javaClass.cls, "statusCode", "I");
+	if (plugin->javaClass.requestSuccessful == NULL || plugin->javaClass.body == NULL || plugin->javaClass.contentType == NULL || plugin->javaClass.headerAppend == NULL || plugin->javaClass.statusCode == NULL) {
+		perror("Failed to get field");
 		return false;
 	}
 	return true;
 }
 
-static void request(const char * header) {
+static struct reqestData* request(const char* header) {
+	struct reqestData* response = NULL;
+	(*plugin->jvm.vm)->AttachCurrentThread(plugin->jvm.vm, (void**)&plugin->jvm.env, NULL);
 	jstring jstr = (*plugin->jvm.env)->NewStringUTF(plugin->jvm.env, header);
-	jobject obj = (*plugin->jvm.env)->NewObject(plugin->jvm.env, plugin->javaClass.cls, plugin->javaClass.constructor, jstr);
-	if (obj == NULL) {
-		wprintf(L"Failed to create object\n");
-		return;
+	jobject object = (*plugin->jvm.env)->NewObject(plugin->jvm.env, plugin->javaClass.cls, plugin->javaClass.constructor, jstr);
+	if (object == NULL) {
+		perror("Failed to create object");
+		goto cleanup;
 	}
-	jboolean success = (*plugin->jvm.env)->CallBooleanMethod(plugin->jvm.env, obj, plugin->javaClass.returnRequestSuccessfulMethod);
-	if (success == JNI_FALSE) {
-		wprintf(L"Failed to call returnRequestSuccessful method\n");
-		return;
+	jboolean requestSuccessful = (*plugin->jvm.env)->GetBooleanField(plugin->jvm.env, object, plugin->javaClass.requestSuccessful);
+	if (requestSuccessful == JNI_FALSE) {
+		perror("Request failed");
+		goto cleanup;
 	}
-	jbyteArray body = (jbyteArray)(*plugin->jvm.env)->CallObjectMethod(plugin->jvm.env, obj, plugin->javaClass.returnBodyMethod);
-	if (body == NULL) {
-		wprintf(L"Failed to call returnBody method\n");
-		return;
-	}
-	jsize len = (*plugin->jvm.env)->GetArrayLength(plugin->jvm.env, body);
+	jarray body = (jarray)(*plugin->jvm.env)->GetObjectField(plugin->jvm.env, object, plugin->javaClass.body);
+	jsize bodySize = (*plugin->jvm.env)->GetArrayLength(plugin->jvm.env, body);
 	jbyte* bodyData = (*plugin->jvm.env)->GetByteArrayElements(plugin->jvm.env, body, NULL);
-	if (bodyData == NULL) {
-		wprintf(L"Failed to get body data\n");
-		return;
+
+	jstring contentType = (jstring)(*plugin->jvm.env)->GetObjectField(plugin->jvm.env, object, plugin->javaClass.contentType);
+	jstring headerAppend = (jstring)(*plugin->jvm.env)->GetObjectField(plugin->jvm.env, object, plugin->javaClass.headerAppend);
+
+	jint statusCode = (*plugin->jvm.env)->GetIntField(plugin->jvm.env, object, plugin->javaClass.statusCode);
+	char* contentTypeData = (*plugin->jvm.env)->GetStringUTFChars(plugin->jvm.env, contentType, NULL);
+	char* headerAppendData = NULL;
+	if (headerAppend != NULL)
+		headerAppendData = (*plugin->jvm.env)->GetStringUTFChars(plugin->jvm.env, headerAppend, NULL);
+
+	response = (struct reqestData*)malloc(sizeof(struct reqestData));
+	if (response == NULL) {
+		perror("Failed to allocate memory for response");
+		goto cleanup;
 	}
-	char* bodyDataChar = (const char*)bodyData;
+	response->responseSize = bodySize;
+	response->responseCode = statusCode;
+	response->responseType = contentTypeData;
+	response->adictionalHeader = headerAppendData;
+	response->data = (char*)malloc(bodySize);
+	if (response->data == NULL) {
+		perror("Failed to allocate memory for response data");
+		free(response);
+		response = NULL;
+		goto cleanup;
+	}
+	memcpy(response->data, bodyData, bodySize);
+cleanup:
+	(*plugin->jvm.vm)->DetachCurrentThread(plugin->jvm.vm);
+	return response;
 }
 
 
 
-__declspec(dllexport) bool responsePoint(const char* headerRequest, char** bodyResponse, uint64_t* responseSize, uint16_t* responseCode, char** adictionalHeader)
+__declspec(dllexport) bool responsePoint(const char* headerRequest, char** responseContent, uint64_t* responseSize, uint16_t* responseCode, char** responseType, char** adictionalHeader)
 {
-	request(headerRequest);
+	if (plugin == NULL) {
+		perror("Plugin not initialized");
+		return false;
+	}
+	struct reqestData* response = request(headerRequest);
+	if (response == NULL) {
+		perror("Failed to get response");
+		return false;
+	}
+	*responseSize = response->responseSize;
+	*responseCode = response->responseCode;
+	*responseType = response->responseType;
+	*adictionalHeader = response->adictionalHeader;
+	*responseContent = response->data;
+	free(response);
 	return true;
 }
 
@@ -115,7 +165,7 @@ __declspec(dllexport) void entryPoint()
 	}
 
 	JavaVMOption options[4];
-	options[0].optionString = "-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005";
+	options[0].optionString = "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005";
 	options[1].optionString = "-Djava.class.path=D:\\Data\\SweetSocket\\examples\\http\\plugins\\http_plugin_java";
 	options[2].optionString = "-Xmx512m";
 	options[3].optionString = "-Xms256m";
@@ -160,11 +210,21 @@ __declspec(dllexport) void shutdownPoint()
 	wprintf(L"Java JVM has stopped\n");
 }
 
+__declspec(dllexport) void setModule(HMODULE module) {
+	g_hModule = module;
+}
+
+__declspec(dllexport) HMODULE getModule() {
+	return g_hModule;
+}
+
 __declspec(dllexport) const struct HTTP_plugin_metadata* getManifest()
 {
 	manifest.requestPoint = requestPoint;
 	manifest.responsePoint = responsePoint;
 	manifest.entryPoint = entryPoint;
 	manifest.shutdownPoint = shutdownPoint;
+	manifest.setModule = setModule;
+	manifest.getModule = getModule;
 	return &manifest;
 }

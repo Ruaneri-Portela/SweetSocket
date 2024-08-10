@@ -150,7 +150,7 @@ void HTTP_processClientRequest(char* data, uint64_t size, struct socketGlobalCon
 		uint16_t pluginResponseCode = 0;
 		char* pluginAdditionalHeader = NULL;
 		char* typeResponse = NULL;
-		if (metadata->responsePoint(data, &pluginContent, &pluginResponseSize, &pluginResponseCode, &pluginAdditionalHeader)) {
+		if (metadata->responsePoint(data,&pluginContent,&pluginResponseSize,&pluginResponseCode,&typeResponse,&pluginAdditionalHeader)) {
 			HTTP_sendHeaderResponse(typeResponse, pluginResponseCode, pluginResponseSize, pluginAdditionalHeader, ctx, thisClient->id);
 			sendData(pluginContent, pluginResponseSize, ctx, thisClient->id);
 			free(pluginContent);

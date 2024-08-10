@@ -1,18 +1,20 @@
 public class WebMain {
-    public boolean requestSuccessful;
+    public boolean requestSuccessful = false;
     public byte[] body;
-
-
-    public byte[] returnBody() {
-        return body;
-    }
-
-    public boolean returnRequestSuccessful() {
-        return requestSuccessful;
-    }
+    public String contentType;
+    public String headerAppend;
+    public int statusCode;
 
     public WebMain(String request) {
-        body = "<html><body><h1>404 Not Found</h1></body></html>".getBytes();
-        requestSuccessful = true;
+        System.out.println("Java WebMain constructor called with request: " + request);
+        String path = request.split(" ")[1];
+        String prefix = "/java";
+        if (path.startsWith(prefix)) {
+            body = "<html><body><h1>Hello, World From JAVA!</h1></body></html>".getBytes();
+            contentType = "text/html";
+            statusCode = 200;
+            requestSuccessful = true;
+        }
+        return;
     }
 }

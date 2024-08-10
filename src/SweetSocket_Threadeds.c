@@ -84,7 +84,6 @@ SWEETTHREAD_RETURN reciveScoket(void* arg)
 			reciveContext->function(ptr, dataSize, reciveContext->context, reciveContext->connection, reciveContext->intoExternaParm);
 			free(ptr);
 			data = NULL;
-			break;
 		}
 		else
 		{
