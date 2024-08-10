@@ -36,7 +36,7 @@ static uint64_t findMinorId(struct sockets* conn)
 static bool isNotActiveConnection(struct socketGlobalContext* context)
 {
 	return context == NULL && context->connectionsAlive <= 0 && context->connections.base == NULL;
-};
+}
 
 static void destroyDataPool(struct dataPool* data)
 {
@@ -145,7 +145,7 @@ EXPORT struct socketConnection* createSocket(struct socketGlobalContext* context
 
 EXPORT bool openSocket(char* addr, int16_t port, struct addrinfo* hints, struct addrinfo** result, SOCKET* socketIdentifyer)
 {
-	char portStr[6];
+	char portStr[7];
 	snprintf(portStr, sizeof(portStr), "%d", port);
 	*socketIdentifyer = INVALID_SOCKET;
 	if (getaddrinfo(addr, portStr, hints, result))

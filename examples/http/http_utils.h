@@ -25,10 +25,10 @@ void HTTP_sendErrorResponse(uint16_t code, const wchar_t* msg, struct socketGlob
 
 char* HTTP_getMimeType(const wchar_t* path, struct HTTP_linked_list* mineList);
 
-char* HTTP_getVerb(const char* request, size_t size);
+char* HTTP_getVerb(const char* request);
 
 char* HTTP_getUserAgent(const char* resquest, size_t size);
 
-char* HTTP_getHost(const char* resquest, size_t size);
+char* HTTP_getHost(const char* resquest);
 
 size_t HTTP_createHtmlDirectoryList(const wchar_t* path, const wchar_t* virtualPath, wchar_t** html);

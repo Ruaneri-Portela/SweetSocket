@@ -171,7 +171,6 @@ SWEETTHREAD_RETURN acceptSocket(void* arg)
 			sendContext->connection->sendThread = sweetThread_CreateThread(sendSocket, (void*)sendContext, true);
 		}
 		//
-		bool findMinorId = false;
 		if (acceptContext->context->clients == NULL)
 		{
 			acceptContext->context->clients = newClient;

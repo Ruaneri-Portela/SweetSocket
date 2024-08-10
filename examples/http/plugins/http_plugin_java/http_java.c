@@ -116,7 +116,7 @@ __declspec(dllexport) void entryPoint()
 
 	JavaVMOption options[4];
 	options[0].optionString = "-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005";
-	options[1].optionString = "-Djava.class.path=./";
+	options[1].optionString = "-Djava.class.path=D:\\Data\\SweetSocket\\examples\\http\\plugins\\http_plugin_java";
 	options[2].optionString = "-Xmx512m";
 	options[3].optionString = "-Xms256m";
 
