@@ -58,7 +58,7 @@ EXPORT bool startListening(struct socketGlobalContext* context, enum applyOn ser
 		{
 			// Failed
 			freeaddrinfo(result);
-			continue;
+			return false;
 		}
 		freeaddrinfo(result);
 		if (listen(current->socket.socket, SOMAXCONN) == SOCKET_ERROR)

@@ -1,313 +1,401 @@
-#include "http.h"
+#include "http_config.h"
+#include <ctype.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <SweetSocket.h>
+#include <time.h>
+#include <wchar.h>
 
-struct HTTPServerEnv HTTP_loadConf()
+bool HTTP_isDirectory(const wchar_t *path)
 {
-	struct HTTPServerEnv env;
-	memset(&env, 0, sizeof(env));
-	env.configFile = (char*)malloc(PATHSIZE);
-	GetFullPathName("http.conf", PATHSIZE, env.configFile, NULL);
-	FILE* file = fopen(env.configFile, "r");
-	if (file == NULL)
-	{
-		printf("Arquivo de configuração não encontrado.\n");
-		exit(1);
-	}
-	char line[256];
-	while (fgets(line, sizeof(line), file))
-	{
-		if (line[0] == '#')
-			continue;
-		char* key = strtok(line, "=");
-		char* value = strtok(NULL, "=");
-		if (value != NULL)
-		{
-			HTTP_trim(value);
-		}
-		if (strcmp(key, "Port") == 0)
-		{
-			env.port = atoi(value);
-		}
-		else if (strcmp(key, "Root") == 0)
-		{
-			_chdir(value);
-			char cwd[1024];
-			_getcwd(cwd, sizeof(cwd));
-			env.root = malloc(strlen(cwd) + 1);
-			strcpy(env.root, cwd);
-		}
-		else if (strcmp(key, "Hosts") == 0)
-		{
-			env.hosts = malloc(strlen(value) + 1);
-			strcpy(env.hosts, value);
-		}
-		else if (strcmp(key, "DefaultPage") == 0)
-		{
-			env.defaultPage = malloc(strlen(value) + 1);
-			strcpy(env.defaultPage, value);
-		}
-		else if (strcmp(key, "AllowDirList") == 0)
-		{
-			env.allowDirectoryListing = (strcmp(value, "true") == 0);
-		}
-		else if (strcmp(key, "LogFile") == 0)
-		{
-			env.logFile = malloc(strlen(value) + 1);
-			strcpy(env.logFile, value);
-		}
-	}
-	fclose(file);
-	return env;
-}
-
-bool HTTP_isDirectory(const char* path)
-{
-	DWORD dwAttrib = GetFileAttributesA(path);
+	DWORD dwAttrib = GetFileAttributesW(path);
 	return (dwAttrib != INVALID_FILE_ATTRIBUTES && (dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
 }
 
-bool HTTP_isFile(const char* path)
+bool HTTP_isFile(const wchar_t *path)
 {
-	DWORD dwAttrib = GetFileAttributesA(path);
+	DWORD dwAttrib = GetFileAttributesW(path);
 	return (dwAttrib != INVALID_FILE_ATTRIBUTES && !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
 }
 
-void HTTP_trim(char* str)
+bool HTTP_isKeepAlive(const char *request)
 {
-	char* end;
-
-	while (isspace((unsigned char)*str))
-		str++;
-
-	if (*str == 0)
-		return;
-
-	end = str + strlen(str) - 1;
-	while (end > str && isspace((unsigned char)*end))
-		end--;
-
-	*(end + 1) = '\0';
+	const char *keepAlive = strstr(request, "Connection: keep-alive");
+	return keepAlive != NULL;
 }
 
-void HTTP_getTimeStr(char* buffer, size_t bufferSize, int mode)
+struct findFileDefaut
+{
+	const wchar_t *path;
+	wchar_t *file;
+};
+
+static enum HTTP_linked_list_actions HTTP_isActualFile(struct HTTP_object *actual, void *parms, uint64_t count)
+{
+	struct findFileDefaut *recive = (struct findFileDefaut *)parms;
+
+	size_t lenReal = wcslen(recive->path);
+	size_t lenFile = wcslen((wchar_t *)actual->object);
+
+	wchar_t *file = malloc((lenFile + lenReal + 1) * sizeof(wchar_t));
+	if (file == NULL)
+	{
+		perror("Memory allocation failed");
+		return ARRAY_CONTINUE;
+	}
+
+	wmemcpy(file, recive->path, lenReal);
+	wmemcpy(file + lenReal, (wchar_t *)actual->object, lenFile);
+
+	file[lenReal + lenFile] = L'\0';
+
+	if (HTTP_isFile(file))
+	{
+		recive->file = file;
+		return ARRAY_STOP;
+	}
+
+	free(file);
+	return ARRAY_CONTINUE;
+}
+
+wchar_t *HTTP_findDefaultFile(struct HTTP_linked_list defaults, const wchar_t *path)
+{
+	struct findFileDefaut parms = {(wchar_t *)path, NULL};
+	HTTP_arrayForEach(&defaults, HTTP_isActualFile, &parms);
+	return parms.file;
+}
+
+void HTTP_trimSpaces(wchar_t *str)
+{
+	wchar_t *end;
+
+	while (iswspace(*str))
+		str++;
+
+	if (*str == L'\0')
+		return;
+
+	end = str + wcslen(str) - 1;
+
+	while (end > str && iswspace(*end))
+		end--;
+	*(end + 1) = L'\0';
+}
+
+void HTTP_getTimeString(char *buffer, size_t bufferSize, int mode)
 {
 	time_t rawtime;
-	struct tm* timeinfo;
+	struct tm *timeinfo;
 
 	time(&rawtime);
 
 	timeinfo = localtime(&rawtime);
 
-	switch (mode) {
+	switch (mode)
+	{
 	case 0:
 		strftime(buffer, bufferSize, "%a, %d %b %Y %H:%M:%S GMT", timeinfo);
 		break;
 	case 1:
 		strftime(buffer, bufferSize, "%d:%m:%Y %H:%M:%S", timeinfo);
 	}
-
 }
 
-void HTTP_extractPath(const char* request, char* path, size_t path_size)
+wchar_t *HTTP_getRequestPath(const char *request, wchar_t *root, wchar_t **virtual)
 {
-	const char* start = strchr(request, ' ') + 1;
+	const char *start = strchr(request, ' ');
 	if (start == NULL)
 	{
-		strncpy(path, "", path_size);
-		return;
+		return NULL;
 	}
-
-	const char* end = strchr(start, ' ');
+	start++;
+	const char *end = strchr(start, ' ');
 	if (end == NULL)
 	{
-		strncpy(path, "", path_size);
-		return;
+		return NULL;
 	}
-
 	size_t length = end - start;
-	if (length >= path_size)
-	{
-		length = path_size - 1;
-	}
-	strncpy(path + 1, start, length);
-	path[length + 1] = '\0';
-	path[0] = '.';
+	char *path = (char *)malloc(length + 1);
+	memcpy(path, start, length);
+	size_t rootLength = wcslen(root);
+	length += rootLength;
+	wchar_t *wpath = malloc((length + 1) * sizeof(wchar_t));
+	wmemcpy(wpath, root, rootLength);
+	mbstowcs(wpath + rootLength, path, length - rootLength);
+	if (virtual != NULL)
+		*virtual = wpath + rootLength;
+	wpath[length] = L'\0';
+	free(path);
+	return wpath;
 }
 
-void HTTP_extractRange(const char* request, int64_t* start, int64_t* end)
+void HTTP_getRangeValues(const char *request, int64_t *start, int64_t *end)
 {
 	*start = -1;
 	*end = -1;
-	const char* range = strstr(request, "Range: bytes=");
+	const char *range = strstr(request, "Range: bytes=");
 	if (range == NULL)
 		return;
-	const char* rangeEnd = strchr(range, '\r');
+	const char *rangeEnd = strchr(range, '\r');
 	if (rangeEnd == NULL)
 		return;
-	const char* firstValue = range + 13;
-	const char* dash = strchr(firstValue, '-');
+	const char *firstValue = range + 13;
+	const char *dash = strchr(firstValue, '-');
 	if (dash == NULL)
 		return;
-	const char* secondValue = dash + 1;
+	const char *secondValue = dash + 1;
 	if (secondValue < rangeEnd)
 		*end = strtoll(secondValue, NULL, 10);
 	*start = strtoll(firstValue, NULL, 10);
 }
 
-void HTTP_logRequest(struct HTTPServerEnv* server, const char* verb, const char* path, const char* userAgent, struct socketClients* client)
+void HTTP_logClientRequest(struct HTTP_server_config *server, const char *verb, const wchar_t *path, const char *userAgent, struct socketClients *client)
 {
 	if (server->logFile == NULL)
-	{
 		return;
-	}
+	char *charPath = malloc((wcslen(path) + 1) * sizeof(char));
+	wcstombs(charPath, path, wcslen(path) + 1);
+	char *date = malloc(20);
+	HTTP_getTimeString(date, 20, 1);
 	if (client->client->addr == NULL)
-	{
 		resolvePeer(client);
-	}
-	FILE* file = fopen(server->logFile, "a");
-	if (file == NULL)
-	{
-		return;
-	}
-	char* date = (char*)malloc(20);
-	HTTP_getTimeStr(date, 20, 1);
-	fprintf(file, "(%s) %s -> [%d] %s %s <- %s\n", date, client->client->addr, client->client->port, verb, path, userAgent);
+	fprintf(server->logFile, "(%s) %s -> [%d] %s %s <- %s\n", date, client->client->addr, client->client->port, verb, charPath, userAgent);
+	fflush(server->logFile);
+	free(charPath);
 	free(date);
-	fclose(file);
 }
 
-void HTTP_sendHeader(const char* mineType, const char* status, uint64_t size, const char* opcionais, struct socketGlobalContext* context, int id)
+static const char *HTTP_getStatusString(uint16_t responseCode)
 {
-	const char* opts = opcionais == NULL ? "" : opcionais;
-	const char* headerHttp = "HTTP/1.1 %s\r\n"
-		"Content-Type: %s\r\n"
-		"Content-Length: %lld\r\n"
-		"Server: HttpSweetSocket\r\n"
-		"Date: %s\r\n"
-		"%s\r\n";
-	char* date = (char*)malloc(30);
-	HTTP_getTimeStr(date, 30, 0);
+	switch (responseCode)
+	{
+	case 100:
+		return "100 Continue";
+	case 101:
+		return "101 Switching Protocols";
+	case 102:
+		return "102 Processing";
+	case 200:
+		return "200 OK";
+	case 201:
+		return "201 Created";
+	case 202:
+		return "202 Accepted";
+	case 203:
+		return "203 Non-Authoritative Information";
+	case 204:
+		return "204 No Content";
+	case 205:
+		return "205 Reset Content";
+	case 206:
+		return "206 Partial Content";
+	case 207:
+		return "207 Multi-Status";
+	case 208:
+		return "208 Already Reported";
+	case 226:
+		return "226 IM Used";
+	case 300:
+		return "300 Multiple Choices";
+	case 301:
+		return "301 Moved Permanently";
+	case 302:
+		return "302 Found";
+	case 303:
+		return "303 See Other";
+	case 304:
+		return "304 Not Modified";
+	case 305:
+		return "305 Use Proxy";
+	case 307:
+		return "307 Temporary Redirect";
+	case 308:
+		return "308 Permanent Redirect";
+	case 400:
+		return "400 Bad Request";
+	case 401:
+		return "401 Unauthorized";
+	case 402:
+		return "402 Payment Required";
+	case 403:
+		return "403 Forbidden";
+	case 404:
+		return "404 Not Found";
+	case 405:
+		return "405 Method Not Allowed";
+	case 406:
+		return "406 Not Acceptable";
+	case 407:
+		return "407 Proxy Authentication Required";
+	case 408:
+		return "408 Request Timeout";
+	case 409:
+		return "409 Conflict";
+	case 410:
+		return "410 Gone";
+	case 411:
+		return "411 Length Required";
+	case 412:
+		return "412 Precondition Failed";
+	case 413:
+		return "413 Payload Too Large";
+	case 414:
+		return "414 URI Too Long";
+	case 415:
+		return "415 Unsupported Media Type";
+	case 416:
+		return "416 Range Not Satisfiable";
+	case 417:
+		return "417 Expectation Failed";
+	case 418:
+		return "418 I'm a teapot";
+	case 421:
+		return "421 Misdirected Request";
+	case 422:
+		return "422 Unprocessable Entity";
+	case 423:
+		return "423 Locked";
+	case 424:
+		return "424 Failed Dependency";
+	case 425:
+		return "425 Too Early";
+	case 426:
+		return "426 Upgrade Required";
+	case 428:
+		return "428 Precondition Required";
+	case 429:
+		return "429 Too Many Requests";
+	case 431:
+		return "431 Request Header Fields Too Large";
+	case 451:
+		return "451 Unavailable For Legal Reasons";
+	case 500:
+		return "500 Internal Server Error";
+	case 501:
+		return "501 Not Implemented";
+	case 502:
+		return "502 Bad Gateway";
+	case 503:
+		return "503 Service Unavailable";
+	case 504:
+		return "504 Gateway Timeout";
+	case 505:
+		return "505 HTTP Version Not Supported";
+	case 506:
+		return "506 Variant Also Negotiates";
+	case 507:
+		return "507 Insufficient Storage";
+	case 508:
+		return "508 Loop Detected";
+	case 510:
+		return "510 Not Extended";
+	case 511:
+		return "511 Network Authentication Required";
+	default:
+		return "500 Internal Server Error";
+	}
+}
+
+void HTTP_sendHeaderResponse(const char *mineType, uint16_t responseCode, uint64_t size, const char *opcionais, struct socketGlobalContext *context, uint64_t id)
+{
+	const char *status = HTTP_getStatusString(responseCode);
+	const char *opts = opcionais == NULL ? "" : opcionais;
+	const char *headerHttp = "HTTP/1.1 %s\r\n"
+							 "Content-Type: %s\r\n"
+							 "Content-Length: %lld\r\n"
+							 "Server: HttpSweetSocket\r\n"
+							 "Date: %s\r\n"
+							 "%s\r\n";
+	char *date = (char *)malloc(30);
+	HTTP_getTimeString(date, 30, 0);
 	uint64_t sizeHeader = strlen(headerHttp) + strlen(mineType) + strlen(status) + strlen(opts) + 30 + 21;
-	char* headerToSend = (char*)malloc(sizeHeader);
+	char *headerToSend = (char *)malloc(sizeHeader);
 	snprintf(headerToSend, sizeHeader, headerHttp, status, mineType, size, date, opts);
 	sendData(headerToSend, strlen(headerToSend), context, id);
 	free(headerToSend);
 	free(date);
 }
 
-void HTTP_sendError(int code, const char* msg, struct socketGlobalContext* ctx, int id)
+void HTTP_sendErrorResponse(uint16_t code, const wchar_t *msg, struct socketGlobalContext *ctx, uint64_t id)
 {
-	char* codeExpand = NULL;
-	switch (code)
-	{
-	case 400:
-		codeExpand = "400 Bad Request";
-		break;
-	case 403:
-		codeExpand = "403 Forbidden";
-		break;
-	case 404:
-		codeExpand = "404 Not Found";
-		break;
-	case 500:
-	default:
-		codeExpand = "500 Internal Server Error";
-		break;
-	}
-	HTTP_sendHeader("text/html", codeExpand, strlen(msg), NULL, ctx, id);
-	sendData(msg, strlen(msg), ctx, id);
+	size_t msgSize = wcslen(msg) * sizeof(wchar_t);
+	HTTP_sendHeaderResponse("text/html; charset=UTF-16", code, msgSize, NULL, ctx, id);
+	sendData((const char *)msg, msgSize, ctx, id);
 }
 
-
-char* HTTP_getMineType(const char* path, struct HTTPServerEnv* server)
+struct HTTP_mime_parms
 {
-	FILE* file = fopen(server->configFile, "r");
-	char* mine = NULL;
-	const char* defaultMine = "application/octet-stream";
-	if (file == NULL)
+	const wchar_t *extension;
+	const wchar_t *mineType;
+};
+
+static wchar_t *HTTP_findLasDot(const wchar_t *path)
+{
+	wchar_t *dot = NULL;
+	for (const wchar_t *actual = path; *actual != L'\0'; actual++)
 	{
-		mine = (char*)malloc(25);
-		memcpy(mine, defaultMine, 25);
-		return mine;
-	}
-
-	char line[256];
-	size_t fileNameSize = strlen(path);
-	char* fileName = malloc(fileNameSize + 1);
-
-	memcpy(fileName, path, fileNameSize);
-	fileName[fileNameSize] = '\0';
-	char* name = strtok(fileName, ".");
-	char* extension = strtok(NULL, ".");
-
-	bool mineSector = false;
-	while (fgets(line, sizeof(line), file))
-	{
-		if (line[0] == '#')
-			continue;
-		if (line[0] == '[')
+		if (*actual == L'.')
 		{
-			HTTP_trim(line);
-			if (!mineSector && strcmp(line, "[MIME]\n") == 1)
-			{
-				mineSector = true;
-				continue;
-			}
-			if (mineSector && line[0] == '[')
-			{
-				break;
-			}
-		}
-		if (!mineSector)
-		{
-			continue;
-		}
-		char* key = strtok(line, "=");
-		char* value = strtok(NULL, "=");
-		if (key == NULL || value == NULL)
-			continue;
-		HTTP_trim(key);
-		HTTP_trim(value);
-		if (strcmp(extension, key) == 0)
-		{
-			size_t valueSize = strlen(value);
-			mine = (char*)malloc(valueSize + 1);
-			memcpy(mine, value, valueSize + 1);
-			break;
+			dot = actual;
 		}
 	}
-	if (mine == NULL)
-	{
-		mine = (char*)malloc(25);
-		memcpy(mine, defaultMine, 25);
-	}
-	free(fileName);
-	fclose(file);
-	return mine;
+	return dot;
 }
 
-char* HTTP_getVerb(const char* request, size_t size)
+static enum HTTP_linked_list_actions HTTP_locateMimeType(struct HTTP_object *actual, void *parms, uint64_t count)
 {
-	const char* end = strchr(request, ' ');
+	struct HTTP_server_mine_type *mineType = (struct HTTP_server_mine_type *)actual->object;
+	struct HTTP_mime_parms *localParms = (struct HTTP_mime_parms *)parms;
+	if (wcscmp(localParms->extension, mineType->extension) == 0)
+	{
+		localParms->mineType = mineType->mineType;
+		return ARRAY_STOP;
+	}
+	return ARRAY_CONTINUE;
+}
+
+char *HTTP_getMimeType(const wchar_t *path, struct HTTP_linked_list *mineList)
+{
+	struct HTTP_mime_parms parms = {NULL, NULL};
+	parms.extension = HTTP_findLasDot(path);
+	if (parms.extension == NULL)
+	{
+		return NULL;
+	}
+	parms.extension++;
+	HTTP_arrayForEach(mineList, HTTP_locateMimeType, &parms);
+	if (parms.mineType == NULL)
+		return NULL;
+	char *mineType = malloc((wcslen(parms.mineType) + 1) * sizeof(char));
+	wcstombs(mineType, parms.mineType, wcslen(parms.mineType) + 1);
+	return mineType;
+}
+
+char *HTTP_getVerb(const char *request, size_t size)
+{
+	const char *end = strchr(request, ' ');
 	if (end == NULL)
 	{
 		return NULL;
 	}
 	size_t length = end - request;
-	char* verb = (char*)malloc(length + 1);
+	char *verb = (char *)malloc(length + 1);
 	strncpy(verb, request, length);
 	verb[length] = '\0';
 	return verb;
 }
 
-char* HTTP_getUserAgent(const char* resquest, size_t size)
+char *HTTP_getUserAgent(const char *resquest, size_t size)
 {
-	const char* start = strstr(resquest, "User-Agent: ");
+	const char *start = strstr(resquest, "User-Agent: ");
 	if (start == NULL)
 	{
 		return NULL;
 	}
 	start += 12;
-	const char* end = strstr(start, "\r\n");
+	const char *end = strstr(start, "\r\n");
 	if (end == NULL)
 	{
 		return NULL;
@@ -317,98 +405,146 @@ char* HTTP_getUserAgent(const char* resquest, size_t size)
 	{
 		length = size - 1;
 	}
-	char* userAgent = (char*)malloc(length + 1);
+	char *userAgent = (char *)malloc(length + 1);
 	strncpy(userAgent, start, length);
 	userAgent[length] = '\0';
 	return userAgent;
 }
 
-
-size_t HTTP_htmlListDir(const char* path, char** html)
+char *HTTP_getHost(const char *resquest, size_t size)
 {
-	const char* htmlDocument = "<!DOCTYPE html><html><head><meta charset=\"US-ASCII\"><title>%s</title></head><body><h1>Files</h1><ul>%s</ul></body></html>";
-	const char* listItem = "<li><a href=\"%s%s\">%s</a></li>";
-	char* dirPhysicalPath = NULL;
-	char* cleanPath = NULL;
-	char* data = NULL;
-	size_t pathLen = strlen(path);
-	size_t dataSize = 0;
-	size_t listItemSize = strlen(listItem);
-	size_t cleanPathSize = 0;
-	if (path[strlen(path) - 1] != '/')
+	const char *hostTerminator = ":";
+	const char *start = strstr(resquest, ": ");
+	size_t length = 0;
+	if (start == NULL)
 	{
-		dirPhysicalPath = (char*)malloc(pathLen + 3);
-		memcpy(dirPhysicalPath, path, pathLen);
-		memcpy(dirPhysicalPath + pathLen, "/*", 3);
-		cleanPathSize = pathLen;
+		return NULL;
+	}
+	if (start[2] == '[')
+	{
+		hostTerminator = "]";
+		length++;
+	}
+	const char *end = strstr(start + 2, hostTerminator);
+	if (end == NULL)
+	{
+		return NULL;
+	}
+	length += end - start - 2;
+	char *host = (char *)malloc(length + 1);
+	memcpy(host, start + 2, length);
+	host[length] = '\0';
+	return host;
+}
+
+size_t HTTP_createHtmlDirectoryList(const wchar_t *path, const wchar_t *virtualPath, wchar_t **html)
+{
+	const wchar_t *htmlDocument = L"<!DOCTYPE html><html><head><meta charset=\"UTF-16\"><title>%s</title></head><body><h1>Files</h1><ul>%s</ul></body></html>";
+	const wchar_t *listItem = L"<li><a href=\"%s%s\">%s</a></li>";
+	const wchar_t *emptyList = L"<li>No files</li>";
+	wchar_t *data = NULL;
+	size_t virtualPathLen = wcslen(virtualPath);
+	size_t hmtlDocumentSize = wcslen(htmlDocument);
+	size_t listItemSize = wcslen(listItem);
+	size_t pathLen = wcslen(path);
+	size_t dataSize = 0;
+	bool freeName = false;
+
+	// List files
+	WIN32_FIND_DATAW findFileData;
+	wchar_t *pathCopy = malloc((pathLen + 2) * sizeof(wchar_t));
+	wmemcpy(pathCopy, path, pathLen);
+	pathCopy[pathLen] = L'*';
+	pathCopy[pathLen + 1] = L'\0';
+
+	HANDLE hFind = FindFirstFileW(pathCopy, &findFileData);
+	free(pathCopy);
+	if (hFind == INVALID_HANDLE_VALUE)
+	{
+		return 0;
+	}
+
+	do
+	{
+		wchar_t *name = findFileData.cFileName;
+		size_t nameSize = wcslen(name);
+		if (wcscmp(name, L".") == 0 || wcscmp(name, L"..") == 0)
+			continue;
+
+		wchar_t *pathName = malloc((pathLen + nameSize + 2) * sizeof(wchar_t));
+		wmemcpy(pathName, path, pathLen);
+		wmemcpy(pathName + pathLen, name, nameSize + 1);
+
+		if (HTTP_isDirectory(pathName))
+		{
+			nameSize++;
+			name = malloc((nameSize + 1) * sizeof(wchar_t));
+			wmemcpy(name, findFileData.cFileName, nameSize - 1);
+			name[nameSize - 1] = L'/';
+			name[nameSize] = L'\0';
+			freeName = true;
+		}
+		free(pathName);
+
+		size_t localSize = listItemSize + virtualPathLen + (nameSize * 2);
+		wchar_t *localData = malloc((localSize) * sizeof(wchar_t));
+
+		swprintf(localData, localSize, listItem, virtualPath, name, name);
+
+		if (data == NULL)
+		{
+			data = localData;
+			dataSize = localSize;
+		}
+		else
+		{
+			data = realloc(data, (dataSize + localSize) * sizeof(wchar_t));
+			wcscat(data, localData);
+			dataSize += localSize;
+			free(localData);
+		}
+
+		if (freeName)
+		{
+			free(name);
+			freeName = false;
+		}
+	} while (FindNextFileW(hFind, &findFileData) != 0);
+	FindClose(hFind);
+	if (dataSize == 0)
+	{
+		dataSize += hmtlDocumentSize + wcslen(emptyList) + virtualPathLen;
+		*html = malloc(dataSize * sizeof(wchar_t));
+		swprintf(*html, dataSize, htmlDocument, virtualPath, emptyList);
 	}
 	else
 	{
-		dirPhysicalPath = (char*)malloc(pathLen + 2);
-		memcpy(dirPhysicalPath, path, pathLen);
-		memcpy(dirPhysicalPath + pathLen, "*", 2);
-		cleanPathSize = (pathLen - 1);
+		dataSize += hmtlDocumentSize + virtualPathLen;
+		*html = malloc(dataSize * sizeof(wchar_t));
+		swprintf(*html, dataSize, htmlDocument, virtualPath, data);
+		free(data);
 	}
-
-	pathLen = strlen(dirPhysicalPath);
-	cleanPath = (char*)malloc(cleanPathSize + 1);
-	memcpy(cleanPath, dirPhysicalPath + 1, cleanPathSize);
-	cleanPath[cleanPathSize] = '\0';
-
-	WIN32_FIND_DATAA findFileData;
-	HANDLE hFind = FindFirstFileA(dirPhysicalPath, &findFileData);
-	if (hFind == INVALID_HANDLE_VALUE)
-	{
-		free(cleanPath);
-		free(dirPhysicalPath);
-		return 0;
-	}
-	do
-	{
-		char* name = findFileData.cFileName;
-		if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
-			continue;
-		// Verificar se é diretório
-		size_t nameSize = strlen(name);
-		char* temp = (char*)malloc(nameSize + pathLen);
-		memcpy(temp, dirPhysicalPath, pathLen - 1);
-		memcpy(temp + pathLen - 1, name, nameSize + 1);
-		if (HTTP_isDirectory(temp))
-		{
-			name = (char*)malloc(strlen(findFileData.cFileName) + 2);
-			strcpy(name, findFileData.cFileName);
-			strcat(name, "/");
-			free(temp);
-		}
-		free(temp);
-
-		size_t size = (strlen(name) * 2) + listItemSize + cleanPathSize;
-		char* newData = (char*)malloc(size);
-		snprintf(newData, size, listItem, cleanPath, name, name);
-		if (data == NULL)
-		{
-			dataSize = size;
-			data = newData;
-			continue;
-		}
-		dataSize -= 6;
-		data = (char*)realloc(data, dataSize + size);
-		memcpy(data + dataSize, newData, size);
-		dataSize += size;
-		free(newData);
-		if (name != findFileData.cFileName)
-		{
-			free(name);
-		}
-	} while (FindNextFileA(hFind, &findFileData) != 0);
-
-	dataSize = dataSize + strlen(htmlDocument) + cleanPathSize + 1;
-	*html = (char*)malloc(dataSize);
-	snprintf(*html, dataSize, htmlDocument, cleanPath, data);
-	(*html)[dataSize - 2] = '\0';
-	FindClose(hFind);
-	free(data);
-	free(dirPhysicalPath);
-	free(cleanPath);
-	return dataSize - 11;
+	return wcslen(*html) * sizeof(wchar_t);
 }
+
+/*
+// Função para decodificar a string de URI
+char *HTTP_decodeURI(char *uri) {
+    char *decoded = uri;
+    char *p = uri;
+
+    while (*p) {
+        if (*p == '%') {
+            if (p[1] && p[2]) {
+                char hex[3] = { p[1], p[2], '\0' };
+                *decoded++ = (char)strtol(hex, NULL, 16);
+                p += 2;
+            }
+        } else {
+            *decoded++ = *p;
+        }
+        p++;
+    }
+    *decoded = '\0';
+    return uri;
+}*/

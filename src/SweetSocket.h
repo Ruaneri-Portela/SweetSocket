@@ -5,7 +5,9 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #define EXPORT __declspec(dllexport)
+#ifdef _MSC_VER
 #pragma comment(lib, "ws2_32.lib")
+#endif
 #endif
 
 #include "SweetThread/SweetThread.h"
@@ -165,6 +167,6 @@ EXPORT bool startListening(struct socketGlobalContext *context, enum applyOn ser
 EXPORT void resolvePeer(struct socketClients *client);
 
 //	Above is interal send and recive commands, this is not exported
-bool internalSend(const char *data, uint64_t size, SOCKET id);
+bool internalSend(char **data, uint64_t size, SOCKET id);
 
-int64_t internalRecv(void *data, uint64_t size, SOCKET id);
+int64_t internalRecv(char **data, uint64_t size, SOCKET id);

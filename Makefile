@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -g
+CFLAGS = -Wall -Wextra -pedantic -g
 LDFLAGS =
 
 TARGET = SweetSocket

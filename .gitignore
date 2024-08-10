@@ -371,3 +371,5 @@ FodyWeavers.xsd
 *.avi
 *.html
 *.conf
+jdk-22.0.2/
+srv/

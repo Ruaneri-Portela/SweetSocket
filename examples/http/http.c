@@ -1,198 +1,100 @@
 #include "http.h"
-int closing = 0;
+#include <signal.h>
 
-void HTTP_handleSigint(int sig)
+// Variável global para indicar quando o servidor deve ser fechado
+static int g_closing = 0;
+
+// Função para processar requisições de clientes
+void HTTP_processClientRequest(char* data, uint64_t size, struct socketGlobalContext* ctx, struct socketClients* thisClient, void* parms);
+
+// Função que lida com o sinal SIGINT (Ctrl+C)
+static void HTTP_handleSigint(int sig)
 {
-	closing = 1;
+    (void)sig;  // Evita warnings para parâmetro não utilizado
+    g_closing = 1;
 }
 
-void HTTP_callbackProcessRequest(char* data, uint64_t size, struct socketGlobalContext* ctx, struct socketClients* thisClient, void* parms)
-{
-	struct HTTPServerEnv* server = (struct HTTPServerEnv*)parms;
-	int64_t requestedStartFile, requestedEndFile;
-	HANDLE hFile = INVALID_HANDLE_VALUE;
+// Estruturas de dados usadas para passar parâmetros entre funções
+struct HTTP_upper_server_hosts {
+    struct socketGlobalContext* context;
+    struct HTTP_server_config* server;
+};
 
-	char path[PATHSIZE];
-	const char* command = "200 OK";
-	char* verb = HTTP_getVerb(data, sizeof(verb));
-	bool routineAline = true;
+struct HTTP_upper_server_ports {
+    struct HTTP_upper_server_hosts* up;
+    wchar_t* host;
+};
 
-	// Extrair informações da requisição PATH e RANGE
-	HTTP_extractRange(data, &requestedStartFile, &requestedEndFile);
-	HTTP_extractPath(data, path, sizeof(path));
+// Função para processar portas do servidor
+static enum HTTP_linked_list_actions HTTP_ports(struct HTTP_object* actual, void* parms, uint64_t count) {
+    struct HTTP_upper_server_ports* up = (struct HTTP_upper_server_ports*)parms;
+    struct socketGlobalContext* context = up->up->context;
+    uint16_t* port = (uint16_t*)actual->object;
+    uint8_t type = 0;
 
-	// Log
-	char* userAgent = HTTP_getUserAgent(data, size);
-	if (server->logFile != NULL)
-	{
-		HTTP_logRequest(server, verb, path, userAgent == NULL ? "" : userAgent,thisClient);
-	}
+    size_t len = wcslen(up->host) + 1;
+    char* host = (char*)malloc(len);
+    if (!host) {
+        perror("Failed to allocate memory for host");
+        return ARRAY_STOP; // Interrompe a execução em caso de erro
+    }
+    wcstombs(host, up->host, len);
 
-	while (routineAline) {
-		// Verificar se é um diretório
-		while (HTTP_isDirectory(path))
-		{
-			// Tentar arquivo padrão
-			char* defaultPage = (char*)malloc(strlen(path) + strlen(server->defaultPage) + 2);
-			strcpy(defaultPage, path);
-			if (defaultPage[strlen(defaultPage) - 1] != '/')
-			{
-				strcat(defaultPage, "/");
-			}
-			strcat(defaultPage, server->defaultPage);
-			if (HTTP_isFile(defaultPage))
-			{
-				strcpy(path, defaultPage);
-				free(defaultPage);
-				break;
-			}
-			// Listagem de diretório
-			routineAline = false;
-			if (server->allowDirectoryListing == false)
-			{
-				HTTP_sendError(403, "<h1>403 Forbidden</h1><p>Directory listing not allowed.</p>", ctx, thisClient->id);
-				free(defaultPage);
-				break;
-			}
-			char* html = NULL;
-			size_t htmlSize = HTTP_htmlListDir(path, &html);
-			if (htmlSize == 0)
-			{
-				HTTP_sendError(404, "<h1>404 Not Found</h1><p>Directory not found.</p>", ctx, thisClient->id);
-				free(defaultPage);
-				break;
-			}
-			HTTP_sendHeader("text/html", command, htmlSize, NULL, ctx, thisClient->id);
-			sendData(html, htmlSize, ctx, thisClient->id);
-			free(html);
-			free(defaultPage);
-			break;
-		}
-		// Sair	
-		if (!routineAline)
-			break;
+    if (strchr(host, ':') != NULL) {
+        type = AF_INET6;
+    } else if (strchr(host, '.') != NULL) {
+        type = AF_INET;
+    }
 
-		// Quando for arquivo prosseguir
-		hFile = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-
-		if (hFile == INVALID_HANDLE_VALUE)
-		{
-			HTTP_sendError(404, "<h1>404 Not Found</h1><p>File not found.</p>", ctx, thisClient->id);
-			break;
-		}
-
-		LARGE_INTEGER fileSize;
-		if (!GetFileSizeEx(hFile, &fileSize))
-		{
-			CloseHandle(hFile);
-			HTTP_sendError(500, "<h1>500 Internal Server Error</h1><p>Cannot get file size.</p>", ctx, thisClient->id);
-			break;
-		}
-
-		// Envio de arquivo
-		char* type = HTTP_getMineType(path, server);
-		char* options = NULL;
-
-		// Verificar se é um range (parcial)
-		if (requestedStartFile != -1 || requestedEndFile != -1)
-		{
-			char range[256];
-			int64_t physicalFileSize = fileSize.QuadPart;
-			requestedEndFile = (requestedEndFile == -1) ? fileSize.QuadPart - 1 : requestedEndFile;
-			snprintf(range, sizeof(range),
-				"Accept-Ranges: bytes\r\n"
-				"Content-Range: bytes %lld-%lld/%lld\r\n",
-				requestedStartFile,
-				requestedEndFile,
-				fileSize.QuadPart);
-			fileSize.QuadPart = requestedEndFile - requestedStartFile + 1;
-			if (fileSize.QuadPart != physicalFileSize)
-			{
-				command = "206 Partial Content";
-			}
-			LARGE_INTEGER liOffset;
-			liOffset.QuadPart = requestedStartFile;
-			if (SetFilePointerEx(hFile, liOffset, NULL, FILE_BEGIN) == 0)
-			{
-				CloseHandle(hFile);
-				HTTP_sendError(500, "<h1>500 Internal Server Error</h1><p>Cannot seek file.</p>", ctx, thisClient->id);
-				break;
-			}
-			options = range;
-		}
-
-		// Enviar cabeçalho
-		HTTP_sendHeader(type, command, fileSize.QuadPart, options, ctx, thisClient->id);
-		free(type);
-		// Enviar arquivo
-		size_t sent = (fileSize.QuadPart > MAXFILESIZE) ? MAXFILESIZE : (size_t)fileSize.QuadPart;
-		char* fileData = (char*)malloc(sent);
-		if (fileData == NULL)
-		{
-			CloseHandle(hFile);
-			HTTP_sendError(500, "<h1>500 Internal Server Error</h1><p>Cannot allocate memory.</p>", ctx, thisClient->id);
-			free(verb);
-			return;
-		}
-
-		size_t totalSent = 0;
-		while (totalSent < fileSize.QuadPart)
-		{
-			size_t toRead = (fileSize.QuadPart - totalSent > MAXFILESIZE) ? MAXFILESIZE : (size_t)(fileSize.QuadPart - totalSent);
-			DWORD readSize;
-			if (ReadFile(hFile, fileData, toRead, &readSize, NULL))
-			{
-				if (readSize > 0)
-				{
-					if (!sendData(fileData, readSize, ctx, thisClient->id))
-						break;
-					totalSent += readSize;
-					continue;
-				}
-			}
-			break;
-		}
-		CloseHandle(hFile);
-		free(fileData);
-		routineAline = false;
-		break;
-	}
-	free(userAgent);
-	free(verb);
-	free(data);
+    pushNewConnection(&context->connections, createSocket(context, type, host, *port));
+    free(host);
+    return ARRAY_CONTINUE;
 }
 
-int main(int argc, char* argv[])
+// Função para processar hosts do servidor
+static enum HTTP_linked_list_actions HTTP_hosts(struct HTTP_object* actual, void* parms, uint64_t count) {
+    struct HTTP_upper_server_hosts* up = (struct HTTP_upper_server_hosts*)parms;
+    struct HTTP_upper_server_ports upPort = { up, (wchar_t*)actual->object };
+
+    HTTP_arrayForEach(&up->server->ports, HTTP_ports, &upPort);
+    return ARRAY_CONTINUE;
+}
+
+// Função principal
+int main()
 {
-	struct HTTPServerEnv server = HTTP_loadConf();
-	struct socketGlobalContext* context = initSocketGlobalContext(SOCKET_SERVER);
-	context->useHeader = false;
-	for (char* host = server.hosts; host != NULL;)
-	{
-		char* nxtHost = strstr(host, ",");
-		if (nxtHost != NULL)
-		{
-			*nxtHost = '\0';
-			nxtHost++;
-		}
-		if (strchr(host, ':') != NULL)
-		{
-			pushNewConnection(&context->connections, createSocket(context, AF_INET6, host, server.port));
-		}
-		else if (strchr(host, '.') != NULL)
-		{
-			pushNewConnection(&context->connections, createSocket(context, AF_INET, host, server.port));
-		}
-		host = nxtHost;
-	}
-	startListening(context, APPLY_ALL);
-	startAccepting(context, APPLY_ALL, NULL, &HTTP_callbackProcessRequest, &server, NULL, ONLY_RECIVE);
-	signal(SIGINT, HTTP_handleSigint);
-	printf("Pressione Ctrl-C para sair...\n");
-	while (!closing)
-	{
-		sweetThread_Sleep(1000);
-	}
-	closeSocketGlobalContext(&context);
-	return 0;
+    // Inicialização do ambiente do servidor
+    struct HTTP_server_envolvirment envolviment = { 0 };
+    envolviment.server = HTTP_loadConfig();
+    envolviment.context = initSocketGlobalContext(SOCKET_SERVER);
+    envolviment.context->useHeader = false;
+
+    // Carregamento de MIME types e plugins
+    HTTP_loadMimeTypes(&envolviment);
+    HTTP_loadPlugins(&envolviment);
+
+    // Configuração de hosts e portas
+    struct HTTP_upper_server_hosts up = { envolviment.context, &envolviment.server };
+    HTTP_arrayForEach(&envolviment.server.hosts, HTTP_hosts, &up);
+
+    // Início do servidor
+    if (!startListening(envolviment.context, APPLY_ALL)) {
+        closeSocketGlobalContext(&envolviment.context);
+        perror("Failed to start listening");
+        return 1;
+    }
+
+    // Aceitação de conexões e processamento de requisições
+    startAccepting(envolviment.context, APPLY_ALL, NULL, &HTTP_processClientRequest, &envolviment, NULL, ONLY_RECIVE);
+    signal(SIGINT, HTTP_handleSigint);
+    wprintf(L"Press Ctrl+C to stop\n");
+
+    // Loop principal do servidor
+    while (!g_closing) {
+        sweetThread_Sleep(1000);
+    }
+
+    // Fechamento do servidor
+    closeSocketGlobalContext(&envolviment.context);
+    return 0;
 }
