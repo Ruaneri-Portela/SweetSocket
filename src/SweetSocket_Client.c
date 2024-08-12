@@ -38,7 +38,7 @@ EXPORT bool SweetSocket_clientStartConnection(struct SweetSocket_global_context*
 		context->status = STATUS_INIT;
 	}
 	return true;
-};
+}
 
 EXPORT bool SweetSocket_clientEnablePools(struct SweetSocket_global_context* context, enum SweetSocket_apply_on clientID, bool enableRecivePool, bool enableSendPool)
 {

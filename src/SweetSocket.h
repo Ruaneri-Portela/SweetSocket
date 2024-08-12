@@ -1,3 +1,9 @@
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include "SweetThread/SweetThread.h"
+#define SWEETSOCKET_BUFFER_SIZE 512
+
 #if defined(_WIN32) || defined(_WIN64)
 #define WINSWEETSOCKET
 #define WIN32_LEAN_AND_MEAN
@@ -9,13 +15,6 @@
 #pragma comment(lib, "ws2_32.lib")
 #endif
 #endif
-
-#include "SweetThread/SweetThread.h"
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
-
-#define SWEETSOCKET_BUFFER_SIZE 512
 
 enum SweetSocket_sweet_status_code
 {

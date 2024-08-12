@@ -24,7 +24,7 @@
     <ProjectGuid>{cf1f4572-a1da-47f6-b40f-7f849993d3fb}</ProjectGuid>
     <RootNamespace>http</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <ProjectName>http_example</ProjectName>
+    <ProjectName>http</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">

@@ -104,6 +104,7 @@ void HTTP_arrayForEach(struct HTTP_linked_list* array, enum HTTP_linked_list_act
  */
 static enum HTTP_linked_list_actions HTTP_arrayFreeAction(struct HTTP_object* obj, void* data, uint64_t count) {
     (void)count;
+    (void)data;
     free(obj->object);  // Assumindo que o objeto cont�m dados que devem ser liberados
     free(obj);
     return ARRAY_FREE;

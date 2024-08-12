@@ -50,6 +50,7 @@ struct HTTP_upper_server_ports {
  * @return Enumeração indicando se deve continuar ou parar a execução.
  */
 static enum HTTP_linked_list_actions HTTP_ports(struct HTTP_object* actual, void* parms, uint64_t count) {
+    (void) count;
     struct HTTP_upper_server_ports* up = (struct HTTP_upper_server_ports*)parms;
     struct SweetSocket_global_context* context = up->up->context;
     uint16_t* port = (uint16_t*)actual->object;
@@ -87,6 +88,7 @@ static enum HTTP_linked_list_actions HTTP_ports(struct HTTP_object* actual, void
  * @return Enumeração indicando se deve continuar ou parar a execução.
  */
 static enum HTTP_linked_list_actions HTTP_hosts(struct HTTP_object* actual, void* parms, uint64_t count) {
+    (void) count;
     struct HTTP_upper_server_hosts* up = (struct HTTP_upper_server_hosts*)parms;
     struct HTTP_upper_server_ports upPort = { up, (wchar_t*)actual->object };
 

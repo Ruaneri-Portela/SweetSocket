@@ -154,7 +154,7 @@ EXPORT bool SweetSocket_peerOpenSocket(char* addr, int16_t port, struct addrinfo
 		freeaddrinfo(*result);
 		return false;
 	}
-	for (struct addrinfo* ptr = *result; ptr != NULL; ptr->ai_next)
+	for (struct addrinfo* ptr = *result; ptr != NULL; ptr = ptr->ai_next)
 	{
 		*socketIdentifyer = socket(ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol);
 		if (*socketIdentifyer == INVALID_SOCKET)

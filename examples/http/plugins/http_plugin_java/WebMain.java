@@ -19,7 +19,7 @@ public class WebMain {
         } else {
             html = String.format(html, "");
         }
-        
+
         body = html.getBytes();
         contentType = "text/html";
         statusCode = 200;
