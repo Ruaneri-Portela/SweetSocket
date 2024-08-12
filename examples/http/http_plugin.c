@@ -1,5 +1,6 @@
 #include "http_config.h"
 #include "http_plugin.h"
+#include "http_process.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <windows.h>

@@ -16,7 +16,7 @@ struct HTTP_plugin_metadata
 	void (*entryPoint)();
 	void (*shutdownPoint)();
 	bool (*requestPoint)(char** headerRequest);
-	bool (*responsePoint)(char* header, char* body, uint64_t bodySize, char** responseContent, uint64_t* responseSize, uint16_t* responseCode, char** responseType, char** adictionalHeader);
+	bool (*responsePoint)(struct HTTP_request* request, char** responseContent, uint64_t* responseSize, uint16_t* responseCode, char** responseType, char** adictionalHeader);
 	void (*setModule)(void* module);
 	void* (*getModule)();
 };

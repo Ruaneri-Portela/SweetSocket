@@ -1,4 +1,5 @@
 #include "http_config.h"
+#include "http_process.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -149,25 +150,21 @@ static wchar_t* HTTP_decodeURI(const char* uri) {
 	return wdecoded;
 }
 
-wchar_t* HTTP_getRequestPath(const char* request, wchar_t* root, wchar_t** virtual, wchar_t** pathContent)
+void HTTP_parsingUrl(const char* request, wchar_t* root, wchar_t** realPath, wchar_t** virtual, wchar_t** pathContent)
 {
 	const char* start = strchr(request, ' ');
 	if (start == NULL)
-	{
-		return NULL;
-	}
+		return;
 	start++;
 	const char* end = strchr(start, ' ');
 	if (end == NULL)
-	{
-		return NULL;
-	}
+		return;
 	size_t length = end - start;
 	char* path = (char*)malloc(length + 1);
 	if (path == NULL)
 	{
 		perror("Memory allocation failed");
-		return NULL;
+		return;
 	}
 	memcpy(path, start, length);
 	path[length] = '\0';
@@ -179,58 +176,59 @@ wchar_t* HTTP_getRequestPath(const char* request, wchar_t* root, wchar_t** virtu
 	if (finalPath == NULL)
 	{
 		perror("Memory allocation failed");
-		return NULL;
+		return;
 	}
 	wmemcpy(finalPath, root, rootLen);
 	wmemcpy(finalPath + rootLen, virtualPath, virtualPathLen + 1);
 	*virtual = finalPath + rootLen;
 	free(virtualPath);
 
-	wchar_t * pathEnd = wcschr(*virtual, L'?');
+	wchar_t* pathEnd = wcschr(*virtual, L'?');
 	if (pathEnd != NULL)
 	{
 		*pathEnd = L'\0';
 		*pathContent = pathEnd + 1;
 	}
 	else
-	{
 		*pathContent = NULL;
-	}
-	return finalPath;
+
+	*realPath = finalPath;
 }
 
-void HTTP_getRangeValues(const char* request, int64_t* start, int64_t* end)
+bool HTTP_getRangeValues(const char* request, int64_t* start, int64_t* end)
 {
 	*start = -1;
 	*end = -1;
 	const char* range = strstr(request, "Range: bytes=");
 	if (range == NULL)
-		return;
+		return false;
 	const char* rangeEnd = strchr(range, '\r');
 	if (rangeEnd == NULL)
-		return;
+		return false;
 	const char* firstValue = range + 13;
 	const char* dash = strchr(firstValue, '-');
 	if (dash == NULL)
-		return;
+		return false;
 	const char* secondValue = dash + 1;
 	if (secondValue < rangeEnd)
 		*end = strtoll(secondValue, NULL, 10);
 	*start = strtoll(firstValue, NULL, 10);
+	return true;
 }
 
-void HTTP_logClientRequest(struct HTTP_server_config* server, const char* verb, const wchar_t* path, const char* userAgent, struct SweetSocket_peer_clients* client)
+void HTTP_logClientRequest(struct HTTP_request * request, struct SweetSocket_peer_clients* thisClient)
 {
-	if (server->logFile == NULL)
+	if (request->envolvirment->server.logFile == NULL)
 		return;
-	char* charPath = malloc((wcslen(path) + 1) * sizeof(char));
-	wcstombs(charPath, path, wcslen(path) + 1);
+	size_t virtualPathLen = wcslen(request->virtualPath);
+	char* charPath = malloc((virtualPathLen + 1) * sizeof(char));
+	wcstombs(charPath, request->virtualPath, virtualPathLen + 1);
 	char* date = malloc(20);
 	HTTP_getTimeString(date, 20, 1);
-	if (client->client->addr == NULL)
-		SweetSocket_resolvePeer(client);
-	fprintf(server->logFile, "(%s) %s -> [%d] %s %s <- %s\n", date, client->client->addr, client->client->port, verb, charPath, userAgent);
-	fflush(server->logFile);
+	if (thisClient->client->addr == NULL)
+		SweetSocket_resolvePeer(thisClient);
+	fprintf(request->envolvirment->server.logFile, "(%s) %s -> [%d] %s %s <- %s\n", date, thisClient->client->addr, thisClient->client->port, request->verb, charPath, request->userAgent);
+	fflush(request->envolvirment->server.logFile);
 	free(charPath);
 	free(date);
 }

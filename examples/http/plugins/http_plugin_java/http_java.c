@@ -1,4 +1,5 @@
 #include <http_plugin.h>
+#include <http_process.h>
 #include <jni.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -58,7 +59,7 @@ static bool loadClass() {
 		perror("Failed to find class");
 		return false;
 	}
-	plugin->javaClass.constructor = (*plugin->jvm.env)->GetMethodID(plugin->jvm.env, plugin->javaClass.cls, "<init>", "(Ljava/lang/String;[BI)V");
+	plugin->javaClass.constructor = (*plugin->jvm.env)->GetMethodID(plugin->jvm.env, plugin->javaClass.cls, "<init>", "(Ljava/lang/String;Ljava/lang/String;[BI)V");
 	if (plugin->javaClass.constructor == NULL) {
 		perror("Failed to get constructor");
 		return false;
@@ -75,24 +76,32 @@ static bool loadClass() {
 	return true;
 }
 
-static struct reqestData* request(char* header, char* body, uint64_t bodySize) {
+static struct reqestData* request(struct HTTP_request* requestInput) {
 	struct reqestData* response = NULL;
 	if (plugin == NULL || plugin->jvm.env == NULL) {
 		perror("JVM not initialized");
 		return NULL;
 	}
-	
+
 	// Atraca a thread atual ao JVM necessario pois o java e NTS
 	(*plugin->jvm.vm)->AttachCurrentThread(plugin->jvm.vm, (void**)&plugin->jvm.env, NULL);
 
 	// Convertendo os dados para o formato do Java
-	jstring jstr = (*plugin->jvm.env)->NewStringUTF(plugin->jvm.env, header);
-	jbyteArray jbody = (*plugin->jvm.env)->NewByteArray(plugin->jvm.env, bodySize);
-	(*plugin->jvm.env)->SetByteArrayRegion(plugin->jvm.env, jbody, 0, bodySize, (jbyte*)body);
-	jint jbodySize = bodySize;
+	jstring jstr = (*plugin->jvm.env)->NewStringUTF(plugin->jvm.env, requestInput->header);
+	jstring jstr2 = NULL;
+	if (requestInput->getContent != NULL) {
+		size_t getContentSize = wcslen(requestInput->getContent);
+		char* getContentChar = (char*)malloc(getContentSize + 1);
+		wcstombs(getContentChar, requestInput->getContent, getContentSize + 1);
+		jstr2 = (*plugin->jvm.env)->NewStringUTF(plugin->jvm.env, getContentChar);
+		free(getContentChar);
+	}
+	jbyteArray jbody = (*plugin->jvm.env)->NewByteArray(plugin->jvm.env, requestInput->dataSize);
+	(*plugin->jvm.env)->SetByteArrayRegion(plugin->jvm.env, jbody, 0, requestInput->dataSize, (jbyte*)requestInput->data);
+	jint jbodySize = requestInput->dataSize;
 
 	// Criando o objeto Java
-	jobject object = (*plugin->jvm.env)->NewObject(plugin->jvm.env, plugin->javaClass.cls, plugin->javaClass.constructor, jstr, jbody, jbodySize);
+	jobject object = (*plugin->jvm.env)->NewObject(plugin->jvm.env, plugin->javaClass.cls, plugin->javaClass.constructor, jstr, jstr2, jbody, jbodySize);
 	if (object == NULL) {
 		perror("Failed to create object");
 		goto cleanup;
@@ -149,13 +158,13 @@ cleanup:
 
 
 
-__declspec(dllexport) bool responsePoint(char* header, char* body, uint64_t bodySize, char** responseContent, uint64_t* responseSize, uint16_t* responseCode, char** responseType, char** adictionalHeader)
+__declspec(dllexport) bool responsePoint(struct HTTP_request* requestInput, char** responseContent, uint64_t* responseSize, uint16_t* responseCode, char** responseType, char** adictionalHeader)
 {
 	if (plugin == NULL) {
 		perror("Plugin not initialized");
 		return false;
 	}
-	struct reqestData* response = request(header, body, bodySize);
+	struct reqestData* response = request(requestInput);
 	if (response == NULL) {
 		perror("Failed to get response");
 		return false;
