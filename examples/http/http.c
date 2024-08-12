@@ -17,7 +17,7 @@ static int g_closing = 0;
  * @param thisClient Cliente que está fazendo a solicitação.
  * @param parms Parâmetros da solicitação HTTP.
  */
-void HTTP_processClientRequest(char* data, uint64_t size, struct socketGlobalContext* ctx, struct socketClients* thisClient, void* parms);
+void HTTP_processClientRequest(char* data, uint64_t size, struct SweetSocket_global_context* ctx, struct SweetSocket_peer_clients* thisClient, void* parms);
 
 /**
  * Função que lida com o sinal SIGINT (Ctrl+C).
@@ -32,7 +32,7 @@ static void HTTP_handleSigint(int sig)
 
 // Estruturas de dados usadas para passar parâmetros entre funções
 struct HTTP_upper_server_hosts {
-    struct socketGlobalContext* context;
+    struct SweetSocket_global_context* context;
     struct HTTP_server_config* server;
 };
 
@@ -51,7 +51,7 @@ struct HTTP_upper_server_ports {
  */
 static enum HTTP_linked_list_actions HTTP_ports(struct HTTP_object* actual, void* parms, uint64_t count) {
     struct HTTP_upper_server_ports* up = (struct HTTP_upper_server_ports*)parms;
-    struct socketGlobalContext* context = up->up->context;
+    struct SweetSocket_global_context* context = up->up->context;
     uint16_t* port = (uint16_t*)actual->object;
     uint8_t type = 0;
 
@@ -73,7 +73,7 @@ static enum HTTP_linked_list_actions HTTP_ports(struct HTTP_object* actual, void
     }
 
     // Criar e adicionar a conexão ao contexto
-    pushNewConnection(&context->connections, createSocket(context, type, host, *port));
+    SweetSocket_pushNewConnection(&context->connections, SweetSocket_createPeer(context, type, host, *port));
     free(host);
     return ARRAY_CONTINUE;
 }
@@ -104,7 +104,7 @@ int main()
     // Inicialização do ambiente do servidor
     struct HTTP_server_envolvirment envolviment = { 0 };
     envolviment.server = HTTP_loadConfig();
-    envolviment.context = initSocketGlobalContext(SOCKET_SERVER);
+    envolviment.context = SweetSocket_initGlobalContext(PEER_SERVER);
     envolviment.context->useHeader = false;
 
     // Carregamento de MIME types e plugins
@@ -116,23 +116,23 @@ int main()
     HTTP_arrayForEach(&envolviment.server.hosts, HTTP_hosts, &up);
 
     // Início do servidor
-    if (!startListening(envolviment.context, APPLY_ALL)) {
-        closeSocketGlobalContext(&envolviment.context);
+    if (!SweetSocket_serverStartListening(envolviment.context, APPLY_ALL)) {
+        SweetSocket_closeGlobalContext(&envolviment.context);
         perror("Failed to start listening");
         return 1;
     }
 
     // Aceitação de conexões e processamento de requisições
-    startAccepting(envolviment.context, APPLY_ALL, NULL, &HTTP_processClientRequest, &envolviment, NULL, ONLY_RECIVE);
+    SweetSocket_serverStartAccepting(envolviment.context, APPLY_ALL, NULL, &HTTP_processClientRequest, &envolviment, NULL, ONLY_RECIVE);
     signal(SIGINT, HTTP_handleSigint);
     wprintf(L"Press Ctrl+C to stop\n");
 
     // Loop principal do servidor
     while (!g_closing) {
-        sweetThread_Sleep(1000); // Pausa por 1 segundo
+        SweetThread_sleep(1000); // Pausa por 1 segundo
     }
 
     // Fechamento do servidor
-    closeSocketGlobalContext(&envolviment.context);
+    SweetSocket_closeGlobalContext(&envolviment.context);
     return 0;
 }

@@ -1,17 +1,17 @@
 #include "SweetSocket.h"
 #include "SweetSocket_Threadeds.h"
 
-static bool invalidAction(struct socketGlobalContext* context)
+static bool SweetSocket_serverInvalidAction(struct SweetSocket_global_context* context)
 {
-	return context == NULL || context->type == SOCKET_SERVER || context->status == STATUS_NOT_INIT || context->status == STATUS_CLOSED || context->status == STATUS_IN_CLOSE || context->connections.size <= 0 || context->connections.base == NULL;
+	return context == NULL || context->type == PEER_SERVER || context->status == STATUS_NOT_INIT || context->status == STATUS_CLOSED || context->status == STATUS_IN_CLOSE || context->connections.size <= 0 || context->connections.base == NULL;
 	;
 }
 
-EXPORT bool startConnection(struct socketGlobalContext* context, enum applyOn serverID)
+EXPORT bool SweetSocket_clientStartConnection(struct SweetSocket_global_context* context, enum SweetSocket_apply_on serverID)
 {
-	if (invalidAction(context))
+	if (SweetSocket_serverInvalidAction(context))
 		return false;
-	for (struct socketConnection* current = context->connections.base; current != NULL; current = current->next)
+	for (struct SweetSocket_peer_connects* current = context->connections.base; current != NULL; current = current->next)
 	{
 		if (!(serverID == APPLY_ALL ? true : current->id == serverID ? true
 			: false))
@@ -21,7 +21,7 @@ EXPORT bool startConnection(struct socketGlobalContext* context, enum applyOn se
 		hints.ai_socktype = SOCK_STREAM;
 		hints.ai_protocol = IPPROTO_TCP;
 		struct addrinfo* result = NULL;
-		if (!openSocket(current->socket.addr, current->socket.port, &hints, &result, &current->socket.socket))
+		if (!SweetSocket_peerOpenSocket(current->socket.addr, current->socket.port, &hints, &result, &current->socket.socket))
 		{
 			// Failed
 			continue;
@@ -40,28 +40,28 @@ EXPORT bool startConnection(struct socketGlobalContext* context, enum applyOn se
 	return true;
 };
 
-EXPORT bool enablePools(struct socketGlobalContext* context, enum applyOn clientID, bool enableRecivePool, bool enableSendPool)
+EXPORT bool SweetSocket_clientEnablePools(struct SweetSocket_global_context* context, enum SweetSocket_apply_on clientID, bool enableRecivePool, bool enableSendPool)
 {
-	if (invalidAction(context))
+	if (SweetSocket_serverInvalidAction(context))
 		return false;
-	for (struct socketClients* current = context->clients; current != NULL; current = current->next)
+	for (struct SweetSocket_peer_clients* current = context->clients; current != NULL; current = current->next)
 	{
 		if (!(clientID == APPLY_ALL ? true : current->id == clientID ? true
 			: false))
 			continue;
 		if (enableRecivePool && current->reciveThread.address == NULL)
 		{
-			struct intoContextSocketDataThread* reciveContext = (struct intoContextSocketDataThread*)calloc(1, sizeof(struct intoContextSocketDataThread));
+			struct SweetSocket_data_context_thread* reciveContext = (struct SweetSocket_data_context_thread*)calloc(1, sizeof(struct SweetSocket_data_context_thread));
 			reciveContext->context = context;
 			reciveContext->connection = current;
-			reciveContext->connection->reciveThread = sweetThread_CreateThread(reciveScoket, reciveContext, true);
+			reciveContext->connection->reciveThread = SweetThread_createThread(SweetSocket_reciveThread, reciveContext, true);
 		}
 		if (enableSendPool && current->sendThread.address == NULL)
 		{
-			struct intoContextSocketDataThread* sendContext = (struct intoContextSocketDataThread*)calloc(1, sizeof(struct intoContextSocketDataThread));
+			struct SweetSocket_data_context_thread* sendContext = (struct SweetSocket_data_context_thread*)calloc(1, sizeof(struct SweetSocket_data_context_thread));
 			sendContext->context = context;
 			sendContext->connection = current;
-			sendContext->connection->sendThread = sweetThread_CreateThread(sendSocket, sendContext, true);
+			sendContext->connection->sendThread = SweetThread_createThread(SweetSocket_sendThread, sendContext, true);
 		}
 	}
 	return true;

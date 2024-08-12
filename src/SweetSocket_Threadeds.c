@@ -1,14 +1,14 @@
 #include "SweetSocket.h"
 
-SWEETTHREAD_RETURN sendSocket(void* arg)
+SWEETTHREAD_RETURN SweetSocket_sendThread(void* arg)
 {
-	struct intoContextSocketDataThread* sendContext = (struct intoContextSocketDataThread*)arg;
+	struct SweetSocket_data_context_thread* sendContext = (struct SweetSocket_data_context_thread*)arg;
 	while (sendContext->context->status == STATUS_INIT && !sendContext->connection->closing)
 	{
-		struct dataPool* current = sendContext->connection->send;
+		struct SweetSocket_data_pool* current = sendContext->connection->send;
 		while (current != NULL)
 		{
-			if (internalSend(&(current->data), current->size, sendContext->connection->client->socket))
+			if (SweetSocket_internalSend(&(current->data), current->size, sendContext->connection->client->socket))
 			{
 				sendContext->connection->send = current->next;
 				free(current->data);
@@ -18,19 +18,19 @@ SWEETTHREAD_RETURN sendSocket(void* arg)
 			}
 			break;
 		}
-		sweetThread_Sleep(10);
+		SweetThread_sleep(10);
 	}
 	if (!sendContext->connection->closing)
 	{
-		closeClient(sendContext->context, sendContext->connection->id);
+		SweetSocket_peerClientClose(sendContext->context, sendContext->connection->id);
 	}
 	free(arg);
 	SWEETTHREAD_RETURN_VALUE(1);
 }
 
-SWEETTHREAD_RETURN reciveScoket(void* arg)
+SWEETTHREAD_RETURN SweetSocket_reciveThread(void* arg)
 {
-	struct intoContextSocketDataThread* reciveContext = (struct intoContextSocketDataThread*)arg;
+	struct SweetSocket_data_context_thread* reciveContext = (struct SweetSocket_data_context_thread*)arg;
 	char* data = NULL;
 	void* basePointer = NULL;
 	uint64_t size = 0;
@@ -38,8 +38,8 @@ SWEETTHREAD_RETURN reciveScoket(void* arg)
 	bool isHeader = true;
 	if (reciveContext->context->useHeader)
 	{
-		data = malloc(sizeof(struct dataHeader) + 1);
-		size = sizeof(struct dataHeader);
+		data = malloc(sizeof(struct SweetSocket_data_header) + 1);
+		size = sizeof(struct SweetSocket_data_header);
 	}
 	else
 	{
@@ -49,7 +49,7 @@ SWEETTHREAD_RETURN reciveScoket(void* arg)
 	permSize = size;
 	while (reciveContext->context->status == STATUS_INIT && !reciveContext->connection->closing && reciveContext->connection->client != NULL)
 	{
-		int64_t recived = internalRecv(&data, size, reciveContext->connection->client->socket);
+		int64_t recived = SweetSocket_internalRecive(&data, size, reciveContext->connection->client->socket);
 		if (reciveContext->context->status != STATUS_INIT || recived == 0 || reciveContext->connection->closing){
 			data = NULL;
 			break;
@@ -58,7 +58,7 @@ SWEETTHREAD_RETURN reciveScoket(void* arg)
 		{
 			if (isHeader)
 			{
-				struct dataHeader* header = (struct dataHeader*)data;
+				struct SweetSocket_data_header* header = (struct SweetSocket_data_header*)data;
 				data = malloc(header->size + 1);
 				size = header->size;
 				free(header);
@@ -88,7 +88,7 @@ SWEETTHREAD_RETURN reciveScoket(void* arg)
 		}
 		else
 		{
-			struct dataPool* newNode = (struct dataPool*)malloc(sizeof(struct dataPool));
+			struct SweetSocket_data_pool* newNode = (struct SweetSocket_data_pool*)malloc(sizeof(struct SweetSocket_data_pool));
 			newNode->data = (basePointer == NULL ? data : basePointer);
 			newNode->size = size;
 			newNode->next = NULL;
@@ -98,7 +98,7 @@ SWEETTHREAD_RETURN reciveScoket(void* arg)
 			}
 			else
 			{
-				struct dataPool* current = reciveContext->connection->revice;
+				struct SweetSocket_data_pool* current = reciveContext->connection->revice;
 				while (current->next != NULL)
 				{
 					current = current->next;
@@ -112,19 +112,19 @@ SWEETTHREAD_RETURN reciveScoket(void* arg)
 		basePointer = NULL;
 	}
 	if (!reciveContext->connection->closing)
-		closeClient(reciveContext->context, reciveContext->connection->id);
+		SweetSocket_peerClientClose(reciveContext->context, reciveContext->connection->id);
 	if (data != NULL)
 		free(data);
 	free(arg);
 	SWEETTHREAD_RETURN_VALUE(1);
 }
 
-SWEETTHREAD_RETURN acceptSocket(void* arg)
+SWEETTHREAD_RETURN SweetSocket_acceptConnectionThread(void* arg)
 {
-	struct acceptIntoContextSocket* acceptContext = (struct acceptIntoContextSocket*)arg;
+	struct SweetSocket_accept_data_context_thread* acceptContext = (struct SweetSocket_accept_data_context_thread*)arg;
 	while (true)
 	{
-		struct socketData* client = (struct socketData*)calloc(1, sizeof(struct socketData));
+		struct SweetSocket_peer_data* client = (struct SweetSocket_peer_data*)calloc(1, sizeof(struct SweetSocket_peer_data));
 		client->socket = accept(acceptContext->connection->socket.socket, NULL, NULL);
 		if (acceptContext->context->status != STATUS_INIT || acceptContext->connection->socket.socket == 0)
 		{
@@ -147,28 +147,28 @@ SWEETTHREAD_RETURN acceptSocket(void* arg)
 		}
 		// Send ACK to notificate that the connection was accepted
 		acceptContext->context->connectionsAlive++;
-		struct socketClients* newClient = (struct socketClients*)calloc(1, sizeof(struct socketClients));
+		struct SweetSocket_peer_clients* newClient = (struct SweetSocket_peer_clients*)calloc(1, sizeof(struct SweetSocket_peer_clients));
 		newClient->client = client;
 		newClient->id = acceptContext->context->minClientID++;
 		if (acceptContext->connection->enableRecivePool)
 		{
 			// Start recive thread
-			struct intoContextSocketDataThread* reciveContext = (struct intoContextSocketDataThread*)calloc(1, sizeof(struct intoContextSocketDataThread));
+			struct SweetSocket_data_context_thread* reciveContext = (struct SweetSocket_data_context_thread*)calloc(1, sizeof(struct SweetSocket_data_context_thread));
 			reciveContext->connection = newClient;
 			reciveContext->context = acceptContext->context;
 			reciveContext->function = acceptContext->functionRecv;
 			reciveContext->intoExternaParm = acceptContext->intoExternaParmRecv;
-			reciveContext->connection->reciveThread = sweetThread_CreateThread(reciveScoket, (void*)reciveContext, true);
+			reciveContext->connection->reciveThread = SweetThread_createThread(SweetSocket_reciveThread, (void*)reciveContext, true);
 		}
 		if (acceptContext->connection->enableSendPool)
 		{
 			// Start send thread
-			struct intoContextSocketDataThread* sendContext = (struct intoContextSocketDataThread*)calloc(1, sizeof(struct intoContextSocketDataThread));
+			struct SweetSocket_data_context_thread* sendContext = (struct SweetSocket_data_context_thread*)calloc(1, sizeof(struct SweetSocket_data_context_thread));
 			sendContext->connection = newClient;
 			sendContext->context = acceptContext->context;
 			sendContext->function = acceptContext->functionSend;
 			sendContext->intoExternaParm = acceptContext->intoExternaParmSend;
-			sendContext->connection->sendThread = sweetThread_CreateThread(sendSocket, (void*)sendContext, true);
+			sendContext->connection->sendThread = SweetThread_createThread(SweetSocket_sendThread, (void*)sendContext, true);
 		}
 		//
 		if (acceptContext->context->clients == NULL)
@@ -176,7 +176,7 @@ SWEETTHREAD_RETURN acceptSocket(void* arg)
 			acceptContext->context->clients = newClient;
 			continue;
 		}
-		for (struct socketClients* current = acceptContext->context->clients; current != NULL; current = current->next)
+		for (struct SweetSocket_peer_clients* current = acceptContext->context->clients; current != NULL; current = current->next)
 		{
 			if (current->next == NULL)
 			{

@@ -21,7 +21,7 @@ struct HTTP_server_config
 struct HTTP_server_envolvirment
 {
 	struct HTTP_server_config server;
-	struct socketGlobalContext* context;
+	struct SweetSocket_global_context* context;
 	struct HTTP_linked_list plugins;
 	struct HTTP_linked_list virtualHosts;
 	struct HTTP_linked_list mimeTypes;

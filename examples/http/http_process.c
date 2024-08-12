@@ -11,7 +11,7 @@
  * @param context Contexto global do socket.
  * @param thisClient Cliente que está fazendo a solicitação.
  */
-static void HTTP_transferData(struct HTTPsendParms* parms, struct socketGlobalContext* context, struct socketClients* thisClient) {
+static void HTTP_transferData(struct HTTPsendParms* parms, struct SweetSocket_global_context* context, struct SweetSocket_peer_clients* thisClient) {
 	char* options = NULL;
 	char* type = NULL;
 	uint16_t command = 200;
@@ -79,8 +79,8 @@ static void HTTP_transferData(struct HTTPsendParms* parms, struct socketGlobalCo
 		DWORD readSize;
 		if (ReadFile(hFile, fileData, toRead, &readSize, NULL)) {
 			if (readSize > 0) {
-				if (!sendData(fileData, readSize, context, thisClient->id)) {
-					closeClient(context, thisClient->id);
+				if (!SweetSocket_sendData(fileData, readSize, context, thisClient->id)) {
+					SweetSocket_peerClientClose(context, thisClient->id);
 					break;
 				}
 				totalSent += readSize;
@@ -100,7 +100,7 @@ static void HTTP_transferData(struct HTTPsendParms* parms, struct socketGlobalCo
  * @param context Contexto global do socket.
  * @param thisClient Cliente que está fazendo a solicitação.
  */
-static void HTTP_sendDirectoryListing(struct HTTPsendParms* parms, struct socketGlobalContext* context, struct socketClients* thisClient) {
+static void HTTP_sendDirectoryListing(struct HTTPsendParms* parms, struct SweetSocket_global_context* context, struct SweetSocket_peer_clients* thisClient) {
 	if (!parms->envolvirment->server.allowDirectoryListing) {
 		HTTP_sendErrorResponse(403, L"<h1>403 Forbidden</h1><p>Directory listing not allowed.</p>", context, thisClient->id);
 		return;
@@ -114,7 +114,7 @@ static void HTTP_sendDirectoryListing(struct HTTPsendParms* parms, struct socket
 	}
 
 	HTTP_sendHeaderResponse("text/html; charset=UTF-16", 200, htmlSize, NULL, context, thisClient->id);
-	sendData((const char*)html, htmlSize, context, thisClient->id);
+	SweetSocket_sendData((const char*)html, htmlSize, context, thisClient->id);
 	free(html);
 }
 
@@ -127,11 +127,19 @@ static void HTTP_sendDirectoryListing(struct HTTPsendParms* parms, struct socket
  * @param thisClient Cliente que está fazendo a solicitação.
  * @param parms Parâmetros da solicitação HTTP.
  */
-void HTTP_processClientRequest(char* data, uint64_t size, struct socketGlobalContext* ctx, struct socketClients* thisClient, void* parms) {
-	data[size] = '\0';
+void HTTP_processClientRequest(char* data, uint64_t size, struct SweetSocket_global_context* ctx, struct SweetSocket_peer_clients* thisClient, void* parms) {
 	struct HTTP_server_envolvirment* envolvirment = (struct HTTP_server_envolvirment*)parms;
+
+	// Separar cabeçalho e corpo
+	char* header = NULL, * body = NULL;
+	uint64_t dataSize = 0;
+	HTTP_splitRequest(data, size, &header, &body, &dataSize);
+
+	// Trata o caminho da request
 	wchar_t* virtualPath = NULL;
 	wchar_t* realPath = HTTP_getRequestPath(data, envolvirment->server.root, &virtualPath);
+
+	// Obter informações da solicitação
 	char* userAgent = HTTP_getUserAgent(data, size);
 	char* verb = HTTP_getVerb(data);
 	char* host = HTTP_getHost(data);
@@ -150,13 +158,13 @@ void HTTP_processClientRequest(char* data, uint64_t size, struct socketGlobalCon
 		uint16_t pluginResponseCode = 0;
 		char* pluginAdditionalHeader = NULL;
 		char* typeResponse = NULL;
-		if (metadata->responsePoint(data,&pluginContent,&pluginResponseSize,&pluginResponseCode,&typeResponse,&pluginAdditionalHeader)) {
+		if (metadata->responsePoint(header, body, dataSize, &pluginContent, &pluginResponseSize, &pluginResponseCode, &typeResponse, &pluginAdditionalHeader)) {
 			HTTP_sendHeaderResponse(typeResponse, pluginResponseCode, pluginResponseSize, pluginAdditionalHeader, ctx, thisClient->id);
-			sendData(pluginContent, pluginResponseSize, ctx, thisClient->id);
+			SweetSocket_sendData(pluginContent, pluginResponseSize, ctx, thisClient->id);
 			free(pluginContent);
 			free(pluginAdditionalHeader);
 			if (!HTTP_isKeepAlive(data))
-				closeClient(ctx, thisClient->id);
+				SweetSocket_peerClientClose(ctx, thisClient->id);
 			return;
 		}
 		if (!metadata->isKeepLoaded)
@@ -216,5 +224,5 @@ HTTPexit:
 	free(verb);
 	free(realPath);
 	if (!HTTP_isKeepAlive(data))
-		closeClient(ctx, thisClient->id);
+		SweetSocket_peerClientClose(ctx, thisClient->id);
 }

@@ -58,7 +58,7 @@ static bool loadClass() {
 		perror("Failed to find class");
 		return false;
 	}
-	plugin->javaClass.constructor = (*plugin->jvm.env)->GetMethodID(plugin->jvm.env, plugin->javaClass.cls, "<init>", "(Ljava/lang/String;)V");
+	plugin->javaClass.constructor = (*plugin->jvm.env)->GetMethodID(plugin->jvm.env, plugin->javaClass.cls, "<init>", "(Ljava/lang/String;[BI)V");
 	if (plugin->javaClass.constructor == NULL) {
 		perror("Failed to get constructor");
 		return false;
@@ -75,64 +75,87 @@ static bool loadClass() {
 	return true;
 }
 
-static struct reqestData* request(const char* header) {
+static struct reqestData* request(char* header, char* body, uint64_t bodySize) {
 	struct reqestData* response = NULL;
+	if (plugin == NULL || plugin->jvm.env == NULL) {
+		perror("JVM not initialized");
+		return NULL;
+	}
+	
+	// Atraca a thread atual ao JVM necessario pois o java e NTS
 	(*plugin->jvm.vm)->AttachCurrentThread(plugin->jvm.vm, (void**)&plugin->jvm.env, NULL);
+
+	// Convertendo os dados para o formato do Java
 	jstring jstr = (*plugin->jvm.env)->NewStringUTF(plugin->jvm.env, header);
-	jobject object = (*plugin->jvm.env)->NewObject(plugin->jvm.env, plugin->javaClass.cls, plugin->javaClass.constructor, jstr);
+	jbyteArray jbody = (*plugin->jvm.env)->NewByteArray(plugin->jvm.env, bodySize);
+	(*plugin->jvm.env)->SetByteArrayRegion(plugin->jvm.env, jbody, 0, bodySize, (jbyte*)body);
+	jint jbodySize = bodySize;
+
+	// Criando o objeto Java
+	jobject object = (*plugin->jvm.env)->NewObject(plugin->jvm.env, plugin->javaClass.cls, plugin->javaClass.constructor, jstr, jbody, jbodySize);
 	if (object == NULL) {
 		perror("Failed to create object");
 		goto cleanup;
 	}
+
+	// Checando se a requisição foi bem sucedida
 	jboolean requestSuccessful = (*plugin->jvm.env)->GetBooleanField(plugin->jvm.env, object, plugin->javaClass.requestSuccessful);
 	if (requestSuccessful == JNI_FALSE) {
 		perror("Request failed");
 		goto cleanup;
 	}
-	jarray body = (jarray)(*plugin->jvm.env)->GetObjectField(plugin->jvm.env, object, plugin->javaClass.body);
-	jsize bodySize = (*plugin->jvm.env)->GetArrayLength(plugin->jvm.env, body);
-	jbyte* bodyData = (*plugin->jvm.env)->GetByteArrayElements(plugin->jvm.env, body, NULL);
 
+	// Obtendo os dados da resposta
+	jarray reciveBody = (jarray)(*plugin->jvm.env)->GetObjectField(plugin->jvm.env, object, plugin->javaClass.body);
 	jstring contentType = (jstring)(*plugin->jvm.env)->GetObjectField(plugin->jvm.env, object, plugin->javaClass.contentType);
 	jstring headerAppend = (jstring)(*plugin->jvm.env)->GetObjectField(plugin->jvm.env, object, plugin->javaClass.headerAppend);
-
 	jint statusCode = (*plugin->jvm.env)->GetIntField(plugin->jvm.env, object, plugin->javaClass.statusCode);
-	char* contentTypeData = (*plugin->jvm.env)->GetStringUTFChars(plugin->jvm.env, contentType, NULL);
-	char* headerAppendData = NULL;
-	if (headerAppend != NULL)
-		headerAppendData = (*plugin->jvm.env)->GetStringUTFChars(plugin->jvm.env, headerAppend, NULL);
 
+	if (reciveBody == NULL || contentType == NULL) {
+		perror("Failed to get response data");
+		goto cleanup;
+	}
+
+	// Convertendo os dados de resposta para o formato C
+	jsize reciveBodySize = (*plugin->jvm.env)->GetArrayLength(plugin->jvm.env, reciveBody);
+	jbyte* bodyData = (*plugin->jvm.env)->GetByteArrayElements(plugin->jvm.env, reciveBody, NULL);
+	char* contentTypeData = (*plugin->jvm.env)->GetStringUTFChars(plugin->jvm.env, contentType, NULL);
+	char* headerAppendData = (headerAppend != NULL ? (*plugin->jvm.env)->GetStringUTFChars(plugin->jvm.env, headerAppend, NULL) : NULL);
+
+	// Alocando memória para a resposta
 	response = (struct reqestData*)malloc(sizeof(struct reqestData));
 	if (response == NULL) {
 		perror("Failed to allocate memory for response");
 		goto cleanup;
 	}
-	response->responseSize = bodySize;
+
+	response->responseSize = reciveBodySize;
 	response->responseCode = statusCode;
 	response->responseType = contentTypeData;
 	response->adictionalHeader = headerAppendData;
-	response->data = (char*)malloc(bodySize);
+	response->data = (char*)malloc(reciveBodySize);
 	if (response->data == NULL) {
 		perror("Failed to allocate memory for response data");
 		free(response);
 		response = NULL;
 		goto cleanup;
 	}
-	memcpy(response->data, bodyData, bodySize);
+	memcpy(response->data, bodyData, reciveBodySize);
 cleanup:
+	// Liberando recursos
 	(*plugin->jvm.vm)->DetachCurrentThread(plugin->jvm.vm);
 	return response;
 }
 
 
 
-__declspec(dllexport) bool responsePoint(const char* headerRequest, char** responseContent, uint64_t* responseSize, uint16_t* responseCode, char** responseType, char** adictionalHeader)
+__declspec(dllexport) bool responsePoint(char* header, char* body, uint64_t bodySize, char** responseContent, uint64_t* responseSize, uint16_t* responseCode, char** responseType, char** adictionalHeader)
 {
 	if (plugin == NULL) {
 		perror("Plugin not initialized");
 		return false;
 	}
-	struct reqestData* response = request(headerRequest);
+	struct reqestData* response = request(header, body, bodySize);
 	if (response == NULL) {
 		perror("Failed to get response");
 		return false;

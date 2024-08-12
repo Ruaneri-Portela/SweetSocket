@@ -1,23 +1,23 @@
 #include "SweetSocket.h"
 #include "SweetSocket_Threadeds.h"
 
-static bool invalidAction(struct socketGlobalContext* context)
+static bool SweetSocket_serverInvalidAction(struct SweetSocket_global_context* context)
 {
-	return context == NULL || context->type == SOCKET_CLIENT || context->status == STATUS_NOT_INIT || context->status == STATUS_CLOSED || context->status == STATUS_IN_CLOSE || context->connections.size <= 0 || context->connections.base == NULL;
+	return context == NULL || context->type == PEER_CLIENT || context->status == STATUS_NOT_INIT || context->status == STATUS_CLOSED || context->status == STATUS_IN_CLOSE || context->connections.size <= 0 || context->connections.base == NULL;
 	;
 }
 
-EXPORT bool startAccepting(struct socketGlobalContext* context, enum applyOn serverID, void* functionSend, void* functionRecv, void* parmsRecv, void* parmsSend, enum poolBehaviour pool)
+EXPORT bool SweetSocket_serverStartAccepting(struct SweetSocket_global_context* context, enum SweetSocket_apply_on serverID, void* functionSend, void* functionRecv, void* parmsRecv, void* parmsSend, enum SweetSocket_peer_pool_behaviour pool)
 {
-	if (invalidAction(context))
+	if (SweetSocket_serverInvalidAction(context))
 		return false;
-	for (struct socketConnection* current = context->connections.base; current != NULL; current = current->next)
+	for (struct SweetSocket_peer_connects* current = context->connections.base; current != NULL; current = current->next)
 	{
 		if (!(serverID == APPLY_ALL ? true : current->id == serverID ? true
 			: false) ||
 			current->socket.socket == 0)
 			continue;
-		struct acceptIntoContextSocket* acceptContext = (struct acceptIntoContextSocket*)calloc(1, sizeof(struct acceptIntoContextSocket));
+		struct SweetSocket_accept_data_context_thread* acceptContext = (struct SweetSocket_accept_data_context_thread*)calloc(1, sizeof(struct SweetSocket_accept_data_context_thread));
 		acceptContext->context = context;
 		acceptContext->connection = current;
 		acceptContext->connection->enableRecivePool = (pool == ONLY_RECIVE || pool == BOTH) ? true : false;
@@ -27,16 +27,16 @@ EXPORT bool startAccepting(struct socketGlobalContext* context, enum applyOn ser
 		acceptContext->functionSend = functionSend;
 		acceptContext->intoExternaParmRecv = parmsRecv;
 		acceptContext->intoExternaParmSend = parmsSend;
-		acceptContext->connection->acceptThread = sweetThread_CreateThread(acceptSocket, (void *)acceptContext, true);
+		acceptContext->connection->acceptThread = SweetThread_createThread(SweetSocket_acceptConnectionThread, (void *)acceptContext, true);
 	}
 	return true;
 }
 
-EXPORT bool startListening(struct socketGlobalContext* context, enum applyOn serverID)
+EXPORT bool SweetSocket_serverStartListening(struct SweetSocket_global_context* context, enum SweetSocket_apply_on serverID)
 {
-	if (context == NULL || !(context->type == SOCKET_SERVER) || context->connections.size == 0)
+	if (context == NULL || !(context->type == PEER_SERVER) || context->connections.size == 0)
 		return false;
-	for (struct socketConnection* current = context->connections.base; current != NULL; current = current->next)
+	for (struct SweetSocket_peer_connects* current = context->connections.base; current != NULL; current = current->next)
 	{
 		if (!((current->socket.type == AF_INET) ^ (current->socket.type == AF_INET6)) ||
 			(current->socket.socket != 0) ||
@@ -49,7 +49,7 @@ EXPORT bool startListening(struct socketGlobalContext* context, enum applyOn ser
 		hints.ai_protocol = IPPROTO_TCP;
 		hints.ai_flags = AI_PASSIVE;
 		struct addrinfo* result = NULL;
-		if (!openSocket(current->socket.addr, current->socket.port, &hints, &result, &current->socket.socket))
+		if (!SweetSocket_peerOpenSocket(current->socket.addr, current->socket.port, &hints, &result, &current->socket.socket))
 		{
 			// Failed
 			continue;

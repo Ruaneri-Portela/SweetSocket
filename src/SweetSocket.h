@@ -17,7 +17,7 @@
 
 #define SWEETSOCKET_BUFFER_SIZE 512
 
-enum statusCode
+enum SweetSocket_sweet_status_code
 {
 	STATUS_NOT_INIT = 0,
 	STATUS_IN_INIT,
@@ -26,19 +26,19 @@ enum statusCode
 	STATUS_CLOSED
 };
 
-enum socketType
+enum SweetSocket_peer_type
 {
-	SOCKET_NULL = 0,
-	SOCKET_SERVER,
-	SOCKET_CLIENT
+	PEER_NULL = 0,
+	PEER_SERVER,
+	PEER_CLIENT
 };
 
-enum applyOn
+enum SweetSocket_apply_on
 {
 	APPLY_ALL = -1,
 };
 
-enum packetType
+enum SweetSocket_packet_type
 {
 	PACKET_NULL = 0,
 	PACKET_DATA,
@@ -47,7 +47,7 @@ enum packetType
 	PACKET_CLOSE
 };
 
-enum poolBehaviour
+enum SweetSocket_peer_pool_behaviour
 {
 	NO_POOL = 0,
 	ONLY_RECIVE,
@@ -55,7 +55,7 @@ enum poolBehaviour
 	BOTH
 };
 
-struct socketData
+struct SweetSocket_peer_data
 {
 	uint8_t type;
 	char *addr;
@@ -63,110 +63,110 @@ struct socketData
 	uint64_t socket;
 };
 
-struct sockets
+struct SweetSocket_peers
 {
-	struct socketConnection *top;
-	struct socketConnection *base;
+	struct SweetSocket_peer_connects *top;
+	struct SweetSocket_peer_connects *base;
 	uint64_t size;
 };
 
-struct dataHeader
+struct SweetSocket_data_header
 {
-	enum packetType command;
+	enum SweetSocket_packet_type command;
 	uint64_t size;
 };
 
-struct dataPool
+struct SweetSocket_data_pool
 {
 	char *data;
 	uint64_t size;
-	struct dataPool *next;
+	struct SweetSocket_data_pool *next;
 };
 
-struct socketClients
+struct SweetSocket_peer_clients
 {
-	struct socketData *client;
-	struct threadIdentifyer reciveThread;
-	struct threadIdentifyer sendThread;
-	struct dataPool *revice;
-	struct dataPool *send;
+	struct SweetSocket_peer_data *client;
+	struct SweetThread_identifyer reciveThread;
+	struct SweetThread_identifyer sendThread;
+	struct SweetSocket_data_pool *revice;
+	struct SweetSocket_data_pool *send;
 	uint64_t id;
 	bool closing;
-	struct socketClients *next;
+	struct SweetSocket_peer_clients *next;
 };
 
-struct socketConnection
+struct SweetSocket_peer_connects
 {
 	uint64_t id;
-	struct socketData socket;
-	struct threadIdentifyer acceptThread;
-	struct socketConnection *next;
-	struct socketConnection *previous;
+	struct SweetSocket_peer_data socket;
+	struct SweetThread_identifyer acceptThread;
+	struct SweetSocket_peer_connects *next;
+	struct SweetSocket_peer_connects *previous;
 	bool enableRecivePool;
 	bool enableSendPool;
 };
 
-struct socketGlobalContext
+struct SweetSocket_global_context
 {
-	struct sockets connections;
-	enum statusCode status;
-	enum socketType type;
+	struct SweetSocket_peers connections;
+	enum SweetSocket_sweet_status_code status;
+	enum SweetSocket_peer_type type;
 	int64_t connectionsAlive;
 	int64_t maxConnections;
 	int64_t minClientID;
-	struct socketClients *clients;
+	struct SweetSocket_peer_clients *clients;
 	bool useHeader;
 };
 
-struct acceptIntoContextSocket
+struct SweetSocket_accept_data_context_thread
 {
-	struct socketGlobalContext *context;
-	struct socketConnection *connection;
-	void (*functionSend)(void *, uint64_t, struct socketGlobalContext *, struct socketClients *, void *);
+	struct SweetSocket_global_context *context;
+	struct SweetSocket_peer_connects *connection;
+	void (*functionSend)(void *, uint64_t, struct SweetSocket_global_context *, struct SweetSocket_peer_clients *, void *);
 	void *intoExternaParmRecv;
-	void (*functionRecv)(void *, uint64_t, struct socketGlobalContext *, struct socketClients *, void *);
+	void (*functionRecv)(void *, uint64_t, struct SweetSocket_global_context *, struct SweetSocket_peer_clients *, void *);
 	void *intoExternaParmSend;
 };
 
-struct intoContextSocketDataThread
+struct SweetSocket_data_context_thread
 {
-	struct socketGlobalContext *context;
-	struct socketClients *connection;
-	void (*function)(void *, uint64_t, struct socketGlobalContext *, struct socketClients *, void *);
+	struct SweetSocket_global_context *context;
+	struct SweetSocket_peer_clients *connection;
+	void (*function)(void *, uint64_t, struct SweetSocket_global_context *, struct SweetSocket_peer_clients *, void *);
 	void *intoExternaParm;
 };
 
-EXPORT struct socketGlobalContext *initSocketGlobalContext(enum socketType type);
+EXPORT struct SweetSocket_global_context *SweetSocket_initGlobalContext(enum SweetSocket_peer_type type);
 
-EXPORT bool closeSocketGlobalContext(struct socketGlobalContext **context);
+EXPORT bool SweetSocket_closeGlobalContext(struct SweetSocket_global_context **context);
 
-EXPORT int64_t pushNewConnection(struct sockets *conn, struct socketConnection *newSocket);
+EXPORT int64_t SweetSocket_pushNewConnection(struct SweetSocket_peers *conn, struct SweetSocket_peer_connects *newSocket);
 
-EXPORT bool removeConnectionById(struct sockets *conn, uint64_t id);
+EXPORT bool SweetSocket_removeConnectionById(struct SweetSocket_peers *conn, uint64_t id);
 
-EXPORT struct socketConnection *createSocket(struct socketGlobalContext *context, uint8_t type, const char *addr, uint16_t port);
+EXPORT struct SweetSocket_peer_connects *SweetSocket_createPeer(struct SweetSocket_global_context *context, uint8_t type, const char *addr, uint16_t port);
 
-EXPORT bool openSocket(char *addr, int16_t port, struct addrinfo *hints, struct addrinfo **result, SOCKET *socketIdentifyer);
+EXPORT bool SweetSocket_peerOpenSocket(char *addr, int16_t port, struct addrinfo *hints, struct addrinfo **result, SOCKET *socketIdentifyer);
 
-EXPORT bool closeSocket(struct socketGlobalContext *context, enum applyOn serverID);
+EXPORT bool SweetSocket_peerCloseSocket(struct SweetSocket_global_context *context, enum SweetSocket_apply_on serverID);
 
-EXPORT bool closeClient(struct socketGlobalContext *context, enum applyOn clientID);
+EXPORT bool SweetSocket_peerClientClose(struct SweetSocket_global_context *context, enum SweetSocket_apply_on clientID);
 
-EXPORT bool sendData(const char *data, uint64_t size, struct socketGlobalContext *context, enum applyOn clientID);
+EXPORT bool SweetSocket_sendData(const char *data, uint64_t size, struct SweetSocket_global_context *context, enum SweetSocket_apply_on clientID);
 
-EXPORT bool reviceData(struct socketGlobalContext *context, enum applyOn clientID, struct dataPool *target);
+EXPORT bool SweetSocket_reciveData(struct SweetSocket_global_context *context, enum SweetSocket_apply_on clientID, struct SweetSocket_data_pool *target);
 
-EXPORT bool startConnection(struct socketGlobalContext *context, enum applyOn serverID);
+EXPORT bool SweetSocket_clientStartConnection(struct SweetSocket_global_context *context, enum SweetSocket_apply_on serverID);
 
-EXPORT bool enablePools(struct socketGlobalContext *context, enum applyOn clientID, bool enableRecivePool, bool enableSendPool);
+EXPORT bool SweetSocket_clientEnablePools(struct SweetSocket_global_context *context, enum SweetSocket_apply_on clientID, bool enableRecivePool, bool enableSendPool);
 
-EXPORT bool startAccepting(struct socketGlobalContext *context, enum applyOn serverID, void *functionSend, void *functionRecv, void *parmsRecv, void *parmsSend, enum poolBehaviour pool);
+EXPORT bool SweetSocket_serverStartAccepting(struct SweetSocket_global_context *context, enum SweetSocket_apply_on serverID, void *functionSend, void *functionRecv, void *parmsRecv, void *parmsSend, enum SweetSocket_peer_pool_behaviour pool);
 
-EXPORT bool startListening(struct socketGlobalContext *context, enum applyOn serverID);
+EXPORT bool SweetSocket_serverStartListening(struct SweetSocket_global_context *context, enum SweetSocket_apply_on serverID);
 
-EXPORT void resolvePeer(struct socketClients *client);
+EXPORT void SweetSocket_resolvePeer(struct SweetSocket_peer_clients *client);
 
 //	Above is interal send and recive commands, this is not exported
-bool internalSend(char **data, uint64_t size, SOCKET id);
+bool SweetSocket_internalSend(char **data, uint64_t size, SOCKET id);
 
-int64_t internalRecv(char **data, uint64_t size, SOCKET id);
+int64_t SweetSocket_internalRecive(char **data, uint64_t size, SOCKET id);

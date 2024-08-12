@@ -208,7 +208,7 @@ void HTTP_getRangeValues(const char* request, int64_t* start, int64_t* end)
 	*start = strtoll(firstValue, NULL, 10);
 }
 
-void HTTP_logClientRequest(struct HTTP_server_config* server, const char* verb, const wchar_t* path, const char* userAgent, struct socketClients* client)
+void HTTP_logClientRequest(struct HTTP_server_config* server, const char* verb, const wchar_t* path, const char* userAgent, struct SweetSocket_peer_clients* client)
 {
 	if (server->logFile == NULL)
 		return;
@@ -217,7 +217,7 @@ void HTTP_logClientRequest(struct HTTP_server_config* server, const char* verb, 
 	char* date = malloc(20);
 	HTTP_getTimeString(date, 20, 1);
 	if (client->client->addr == NULL)
-		resolvePeer(client);
+		SweetSocket_resolvePeer(client);
 	fprintf(server->logFile, "(%s) %s -> [%d] %s %s <- %s\n", date, client->client->addr, client->client->port, verb, charPath, userAgent);
 	fflush(server->logFile);
 	free(charPath);
@@ -355,7 +355,7 @@ static const char* HTTP_getStatusString(uint16_t responseCode)
 	}
 }
 
-void HTTP_sendHeaderResponse(const char* mineType, uint16_t responseCode, uint64_t size, const char* opcionais, struct socketGlobalContext* context, uint64_t id)
+void HTTP_sendHeaderResponse(const char* mineType, uint16_t responseCode, uint64_t size, const char* opcionais, struct SweetSocket_global_context* context, uint64_t id)
 {
 	const char* status = HTTP_getStatusString(responseCode);
 	const char* opts = opcionais == NULL ? "" : opcionais;
@@ -380,16 +380,16 @@ void HTTP_sendHeaderResponse(const char* mineType, uint16_t responseCode, uint64
 		return;
 	}
 	snprintf(headerToSend, sizeHeader, headerHttp, status, mineType, size, date, opts);
-	sendData(headerToSend, strlen(headerToSend), context, id);
+	SweetSocket_sendData(headerToSend, strlen(headerToSend), context, id);
 	free(headerToSend);
 	free(date);
 }
 
-void HTTP_sendErrorResponse(uint16_t code, const wchar_t* msg, struct socketGlobalContext* ctx, uint64_t id)
+void HTTP_sendErrorResponse(uint16_t code, const wchar_t* msg, struct SweetSocket_global_context* ctx, uint64_t id)
 {
 	size_t msgSize = wcslen(msg) * sizeof(wchar_t);
 	HTTP_sendHeaderResponse("text/html; charset=UTF-16", code, msgSize, NULL, ctx, id);
-	sendData((const char*)msg, msgSize, ctx, id);
+	SweetSocket_sendData((const char*)msg, msgSize, ctx, id);
 }
 
 struct HTTP_mime_parms
@@ -625,4 +625,26 @@ size_t HTTP_createHtmlDirectoryList(const wchar_t* path, const wchar_t* virtualP
 		free(data);
 	}
 	return wcslen(*html) * sizeof(wchar_t);
+}
+
+void HTTP_splitRequest(char* request, uint64_t resquestSize, char ** header, char ** data, uint64_t *dataSize)
+{
+	char* end = strstr(request, "\r\n\r\n");
+	if (end == NULL)
+	{
+		*header = NULL;
+		*data = NULL;
+		return;
+	}
+	size_t headerSize = end - request + 4;
+	request[headerSize - 1] = '\0';
+	*header = request;
+	if(resquestSize == headerSize)
+	{
+		*data = NULL;
+		return;
+	}
+	*dataSize = resquestSize - headerSize;
+	*data = request + headerSize;
+	return;
 }

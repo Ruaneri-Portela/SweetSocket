@@ -6,12 +6,12 @@
 WSADATA wsaData = { 0 };
 #endif
 
-static uint64_t findMinorId(struct sockets* conn)
+static uint64_t SweetSocket_findMinorId(struct SweetSocket_peers* conn)
 {
 	uint64_t minor = 1;
 	if (conn == NULL || conn->size == 0 || conn->base == NULL)
 		return minor;
-	struct socketConnection* current = conn->base;
+	struct SweetSocket_peer_connects* current = conn->base;
 	while (current != NULL)
 	{
 		if (current->id == minor)
@@ -33,41 +33,41 @@ static uint64_t findMinorId(struct sockets* conn)
 	return minor;
 }
 
-static bool isNotActiveConnection(struct socketGlobalContext* context)
+static bool SweetSocket_isNotActiveConnection(struct SweetSocket_global_context* context)
 {
 	return context == NULL && context->connectionsAlive <= 0 && context->connections.base == NULL;
 }
 
-static void destroyDataPool(struct dataPool* data)
+static void SweetSocket_destroyDataPool(struct SweetSocket_data_pool* data)
 {
 	if (data == NULL)
 		return;
 	if (data->next != NULL)
-		destroyDataPool(data->next);
+		SweetSocket_destroyDataPool(data->next);
 	free(data);
 }
 
-struct socketGlobalContext* initSocketGlobalContext(enum socketType type)
+struct SweetSocket_global_context* SweetSocket_initGlobalContext(enum SweetSocket_peer_type type)
 {
 #ifdef WINSWEETSOCKET
 	if (*((int*)(&wsaData)) == 0 && (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0))
 		return 0;
 #endif
-	struct socketGlobalContext* context = (struct socketGlobalContext*)calloc(1, sizeof(struct socketGlobalContext));
+	struct SweetSocket_global_context* context = (struct SweetSocket_global_context*)calloc(1, sizeof(struct SweetSocket_global_context));
 	context->status = STATUS_IN_INIT;
 	context->type = type;
 	context->maxConnections = INT64_MAX;
 	return context;
 }
 
-EXPORT bool closeSocketGlobalContext(struct socketGlobalContext** context)
+EXPORT bool SweetSocket_closeGlobalContext(struct SweetSocket_global_context** context)
 {
 	if ((*context)->connectionsAlive > 0)
 	{
-		closeClient(*context, APPLY_ALL);
+		SweetSocket_peerClientClose(*context, APPLY_ALL);
 	}
 	if ((*context)->connections.size > 0)
-		closeSocket(*context, APPLY_ALL);
+		SweetSocket_peerCloseSocket(*context, APPLY_ALL);
 	free(*context);
 	*context = NULL;
 #ifdef WINSWEETSOCKET
@@ -77,11 +77,11 @@ EXPORT bool closeSocketGlobalContext(struct socketGlobalContext** context)
 	return true;
 }
 
-EXPORT int64_t pushNewConnection(struct sockets* conn, struct socketConnection* newSocket)
+EXPORT int64_t SweetSocket_pushNewConnection(struct SweetSocket_peers* conn, struct SweetSocket_peer_connects* newSocket)
 {
 	if (conn == NULL || newSocket == NULL)
 		return false;
-	newSocket->id = findMinorId(conn);
+	newSocket->id = SweetSocket_findMinorId(conn);
 	conn->size++;
 	if (conn->top == NULL && conn->base == NULL)
 	{
@@ -94,11 +94,11 @@ EXPORT int64_t pushNewConnection(struct sockets* conn, struct socketConnection* 
 	return newSocket->id;
 }
 
-EXPORT bool removeConnectionById(struct sockets* conn, uint64_t id)
+EXPORT bool SweetSocket_removeConnectionById(struct SweetSocket_peers* conn, uint64_t id)
 {
 	if (conn == NULL || conn->size == 0 || conn->top == NULL || conn->base == NULL)
 		return false;
-	struct socketConnection* current = conn->base;
+	struct SweetSocket_peer_connects* current = conn->base;
 	while (current != NULL)
 	{
 		if (current->id == id)
@@ -128,11 +128,11 @@ EXPORT bool removeConnectionById(struct sockets* conn, uint64_t id)
 	return false;
 }
 
-EXPORT struct socketConnection* createSocket(struct socketGlobalContext* context, uint8_t type, const char* addr, uint16_t port)
+EXPORT struct SweetSocket_peer_connects* SweetSocket_createPeer(struct SweetSocket_global_context* context, uint8_t type, const char* addr, uint16_t port)
 {
 	if (context == NULL || !(context->status > STATUS_NOT_INIT))
 		return NULL;
-	struct socketConnection* newSocket = (struct socketConnection*)calloc(1, sizeof(struct socketConnection));
+	struct SweetSocket_peer_connects* newSocket = (struct SweetSocket_peer_connects*)calloc(1, sizeof(struct SweetSocket_peer_connects));
 	newSocket->socket.type = type;
 	if (addr != NULL)
 	{
@@ -143,7 +143,7 @@ EXPORT struct socketConnection* createSocket(struct socketGlobalContext* context
 	return newSocket;
 }
 
-EXPORT bool openSocket(char* addr, int16_t port, struct addrinfo* hints, struct addrinfo** result, SOCKET* socketIdentifyer)
+EXPORT bool SweetSocket_peerOpenSocket(char* addr, int16_t port, struct addrinfo* hints, struct addrinfo** result, SOCKET* socketIdentifyer)
 {
 	char portStr[7];
 	snprintf(portStr, sizeof(portStr), "%d", port);
@@ -170,11 +170,11 @@ EXPORT bool openSocket(char* addr, int16_t port, struct addrinfo* hints, struct 
 	return false;
 }
 
-EXPORT bool closeSocket(struct socketGlobalContext* context, enum applyOn serverID)
+EXPORT bool SweetSocket_peerCloseSocket(struct SweetSocket_global_context* context, enum SweetSocket_apply_on serverID)
 {
-	if (isNotActiveConnection(context))
+	if (SweetSocket_isNotActiveConnection(context))
 		return false;
-	for (struct socketConnection* current = context->connections.base; current != NULL;)
+	for (struct SweetSocket_peer_connects* current = context->connections.base; current != NULL;)
 	{
 		if (!(serverID == APPLY_ALL ? true : current->id == serverID ? true : false) || current->socket.socket == 0)
 		{
@@ -183,19 +183,19 @@ EXPORT bool closeSocket(struct socketGlobalContext* context, enum applyOn server
 		}
 		closesocket(current->socket.socket);
 		current->socket.socket = 0;
-		while (sweetThread_IsRunning(current->acceptThread))
+		while (SweetThread_isRunning(current->acceptThread))
 			;
-		struct socketConnection* next = current->next;
-		removeConnectionById(&context->connections, current->id);
+		struct SweetSocket_peer_connects* next = current->next;
+		SweetSocket_removeConnectionById(&context->connections, current->id);
 		current = next;
 	}
 	return true;
 }
 
-EXPORT bool closeClient(struct socketGlobalContext* context, enum applyOn clientID)
+EXPORT bool SweetSocket_peerClientClose(struct SweetSocket_global_context* context, enum SweetSocket_apply_on clientID)
 {
-	struct socketClients* previous = NULL;
-	for (struct socketClients* current = context->clients; current != NULL;)
+	struct SweetSocket_peer_clients* previous = NULL;
+	for (struct SweetSocket_peer_clients* current = context->clients; current != NULL;)
 	{
 		if (!(clientID == APPLY_ALL ? true : current->id == clientID ? true
 			: false))
@@ -217,9 +217,9 @@ EXPORT bool closeClient(struct socketGlobalContext* context, enum applyOn client
 		current->client->socket = -1;
 		free(current->client);
 		if (current->send != NULL)
-			destroyDataPool(current->send);
+			SweetSocket_destroyDataPool(current->send);
 		if (current->revice != NULL)
-			destroyDataPool(current->revice);
+			SweetSocket_destroyDataPool(current->revice);
 		free(current);
 		current = next;
 		context->connectionsAlive--;
@@ -229,26 +229,26 @@ EXPORT bool closeClient(struct socketGlobalContext* context, enum applyOn client
 	return true;
 }
 
-EXPORT bool sendData(const char* data, uint64_t size, struct socketGlobalContext* context, enum applyOn clientID)
+EXPORT bool SweetSocket_sendData(const char* data, uint64_t size, struct SweetSocket_global_context* context, enum SweetSocket_apply_on clientID)
 {
-	if (isNotActiveConnection(context))
+	if (SweetSocket_isNotActiveConnection(context))
 		return false;
 	bool returnVal = false;
-	for (struct socketClients* connection = context->clients; connection != NULL; connection = connection->next)
+	for (struct SweetSocket_peer_clients* connection = context->clients; connection != NULL; connection = connection->next)
 	{
 		if (!(clientID == APPLY_ALL ? true : connection->id == clientID ? true
 			: false))
 			continue;
 		if (connection->sendThread.address != NULL)
 		{
-			struct dataPool* newData = (struct dataPool*)malloc(sizeof(struct dataPool));
+			struct SweetSocket_data_pool* newData = (struct SweetSocket_data_pool*)malloc(sizeof(struct SweetSocket_data_pool));
 			uint64_t dataSize = 0;
 			void* targetMemory = NULL;
 			void* copyPoint = NULL;
 			if (context->useHeader)
 			{
-				dataSize = sizeof(struct dataHeader) + size;
-				struct dataHeader* header = (struct dataHeader*)calloc(1, dataSize);
+				dataSize = sizeof(struct SweetSocket_data_header) + size;
+				struct SweetSocket_data_header* header = (struct SweetSocket_data_header*)calloc(1, dataSize);
 				header->size = size;
 				header->command = PACKET_DATA;
 				targetMemory = header;
@@ -269,7 +269,7 @@ EXPORT bool sendData(const char* data, uint64_t size, struct socketGlobalContext
 				connection->send = newData;
 				continue;
 			}
-			struct dataPool* currentData = connection->send;
+			struct SweetSocket_data_pool* currentData = connection->send;
 			while (currentData->next != NULL)
 			{
 				currentData = currentData->next;
@@ -280,22 +280,22 @@ EXPORT bool sendData(const char* data, uint64_t size, struct socketGlobalContext
 		}
 		char* sendData = malloc(size);
 		memcpy(sendData, data, size);
-		returnVal = internalSend(&sendData, size, connection->client->socket);
+		returnVal = SweetSocket_internalSend(&sendData, size, connection->client->socket);
 		free(sendData);
 	}
 	return returnVal;
 }
 
-EXPORT bool reviceData(struct socketGlobalContext* context, enum applyOn clientID, struct dataPool* target)
+EXPORT bool SweetSocket_reciveData(struct SweetSocket_global_context* context, enum SweetSocket_apply_on clientID, struct SweetSocket_data_pool* target)
 {
-	if (isNotActiveConnection(context))
+	if (SweetSocket_isNotActiveConnection(context))
 		return false;
-	for (struct socketClients* connection = context->clients; connection != NULL; connection = connection->next)
+	for (struct SweetSocket_peer_clients* connection = context->clients; connection != NULL; connection = connection->next)
 	{
 		if (connection->reciveThread.address != NULL && connection->revice != NULL)
 		{
 			*target = *(connection->revice);
-			struct dataPool* temp = connection->revice;
+			struct SweetSocket_data_pool* temp = connection->revice;
 			connection->revice = connection->revice->next;
 			free(temp);
 			return true;
@@ -304,7 +304,7 @@ EXPORT bool reviceData(struct socketGlobalContext* context, enum applyOn clientI
 	return false;
 }
 
-EXPORT void resolvePeer(struct socketClients* client)
+EXPORT void SweetSocket_resolvePeer(struct SweetSocket_peer_clients* client)
 {
 	if (client == NULL || client->client == NULL || client->client->socket == INVALID_SOCKET || client->client->addr != NULL)
 		return;
@@ -334,7 +334,7 @@ EXPORT void resolvePeer(struct socketClients* client)
 }
 
 //	Above is interal send and recive commands, this is not exported
-bool internalSend(char** data, uint64_t size, SOCKET id)
+bool SweetSocket_internalSend(char** data, uint64_t size, SOCKET id)
 {
 	int64_t sended = send(id, *data, size, 0);
 	if (sended == 0)
@@ -352,7 +352,7 @@ bool internalSend(char** data, uint64_t size, SOCKET id)
 	return true;
 }
 
-int64_t internalRecv(char** data, uint64_t size, SOCKET id)
+int64_t SweetSocket_internalRecive(char** data, uint64_t size, SOCKET id)
 {
 	int64_t reviced = recv(id, *data, size, 0);
 	if (reviced == 0)

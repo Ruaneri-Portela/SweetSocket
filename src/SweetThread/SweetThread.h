@@ -14,22 +14,22 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-struct threadIdentifyer
+struct SweetThread_identifyer
 {
     HANDLE address;
     DWORD id;
 };
 
-EXPORT struct threadIdentifyer sweetThread_CreateThread(int32_t (*function)(void *functionParamets), void *argument, bool startNow);
+EXPORT struct SweetThread_identifyer SweetThread_createThread(int32_t (*function)(void *functionParamets), void *argument, bool startNow);
 
-EXPORT int32_t sweetThread_Join(struct threadIdentifyer thread, uint32_t milliseconds);
+EXPORT int32_t SweetThread_join(struct SweetThread_identifyer thread, uint32_t milliseconds);
 
-EXPORT bool sweetThread_GetExitCode(struct threadIdentifyer thread, int32_t *exitCode);
+EXPORT bool SweetThread_getExitCode(struct SweetThread_identifyer thread, int32_t *exitCode);
 
-EXPORT void sweetThread_Resume(struct threadIdentifyer thread);
+EXPORT void SweetThread_resume(struct SweetThread_identifyer thread);
 
-EXPORT void sweetThread_Suspend(struct threadIdentifyer thread);
+EXPORT void SweetThread_suspend(struct SweetThread_identifyer thread);
 
-EXPORT bool sweetThread_IsRunning(struct threadIdentifyer thread);
+EXPORT bool SweetThread_isRunning(struct SweetThread_identifyer thread);
 
-EXPORT void sweetThread_Sleep(uint32_t milliseconds);
+EXPORT void SweetThread_sleep(uint32_t milliseconds);
