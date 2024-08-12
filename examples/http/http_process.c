@@ -148,8 +148,9 @@ void HTTP_processClientRequest(char *data, uint64_t size, struct SweetSocket_glo
 	HTTP_splitRequest(data, size, &header, &body, &dataSize);
 
 	// Trata o caminho da request
+	wchar_t *pathContent = NULL;
 	wchar_t *virtualPath = NULL;
-	wchar_t *realPath = HTTP_getRequestPath(data, envolvirment->server.root, &virtualPath);
+	wchar_t *realPath = HTTP_getRequestPath(data, envolvirment->server.root, &virtualPath,&pathContent);
 
 	// Obter informações da solicitação
 	char *userAgent = HTTP_getUserAgent(data, size);

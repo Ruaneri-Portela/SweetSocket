@@ -13,11 +13,11 @@ void HTTP_trimSpaces(wchar_t* str);
 
 void HTTP_getTimeString(char* buffer, size_t bufferSize, int mode);
 
-wchar_t* HTTP_getRequestPath(const char* request, wchar_t* root, wchar_t** virtual);
+wchar_t* HTTP_getRequestPath(const char* request, wchar_t* root, wchar_t** virtual, wchar_t** pathContent);
 
 void HTTP_getRangeValues(const char* request, int64_t* start, int64_t* end);
 
-void HTTP_logClientRequest(struct HTTP_server_config *server, const char *verb, const wchar_t *path, const char *userAgent, struct SweetSocket_peer_clients *client);
+void HTTP_logClientRequest(struct HTTP_server_config* server, const char* verb, const wchar_t* path, const char* userAgent, struct SweetSocket_peer_clients* client);
 
 void HTTP_sendHeaderResponse(const char* mineType, uint16_t responseCode, uint64_t size, const char* opcionais, struct SweetSocket_global_context* context, uint64_t id);
 

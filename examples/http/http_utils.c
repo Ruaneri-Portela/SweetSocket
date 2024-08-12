@@ -141,7 +141,7 @@ static wchar_t* HTTP_decodeURI(const char* uri) {
 
 	wdecoded[decoded] = L'\0';
 	wdecoded = realloc(wdecoded, (decoded + 1) * sizeof(wchar_t));
-	if(wdecoded == NULL)
+	if (wdecoded == NULL)
 	{
 		perror("Memory allocation failed");
 		return NULL;
@@ -149,7 +149,7 @@ static wchar_t* HTTP_decodeURI(const char* uri) {
 	return wdecoded;
 }
 
-wchar_t* HTTP_getRequestPath(const char* request, wchar_t* root, wchar_t** virtual)
+wchar_t* HTTP_getRequestPath(const char* request, wchar_t* root, wchar_t** virtual, wchar_t** pathContent)
 {
 	const char* start = strchr(request, ' ');
 	if (start == NULL)
@@ -176,7 +176,7 @@ wchar_t* HTTP_getRequestPath(const char* request, wchar_t* root, wchar_t** virtu
 	size_t virtualPathLen = wcslen(virtualPath);
 	size_t rootLen = wcslen(root);
 	wchar_t* finalPath = malloc((virtualPathLen + rootLen + 1) * sizeof(wchar_t));
-	if(finalPath == NULL)
+	if (finalPath == NULL)
 	{
 		perror("Memory allocation failed");
 		return NULL;
@@ -185,6 +185,17 @@ wchar_t* HTTP_getRequestPath(const char* request, wchar_t* root, wchar_t** virtu
 	wmemcpy(finalPath + rootLen, virtualPath, virtualPathLen + 1);
 	*virtual = finalPath + rootLen;
 	free(virtualPath);
+
+	wchar_t * pathEnd = wcschr(*virtual, L'?');
+	if (pathEnd != NULL)
+	{
+		*pathEnd = L'\0';
+		*pathContent = pathEnd + 1;
+	}
+	else
+	{
+		*pathContent = NULL;
+	}
 	return finalPath;
 }
 
@@ -366,7 +377,7 @@ void HTTP_sendHeaderResponse(const char* mineType, uint16_t responseCode, uint64
 		"Date: %s\r\n"
 		"%s\r\n";
 	char* date = (char*)malloc(30);
-	if(date == NULL)
+	if (date == NULL)
 	{
 		perror("Memory allocation failed");
 		return;
@@ -374,7 +385,7 @@ void HTTP_sendHeaderResponse(const char* mineType, uint16_t responseCode, uint64
 	HTTP_getTimeString(date, 30, 0);
 	uint64_t sizeHeader = strlen(headerHttp) + strlen(mineType) + strlen(status) + strlen(opts) + 30 + 21;
 	char* headerToSend = (char*)malloc(sizeHeader);
-	if(headerToSend == NULL)
+	if (headerToSend == NULL)
 	{
 		perror("Memory allocation failed");
 		return;
@@ -405,7 +416,7 @@ static wchar_t* HTTP_findLasDot(const wchar_t* path)
 	{
 		if (*actual == L'.')
 		{
-			dot = (wchar_t *)actual;
+			dot = (wchar_t*)actual;
 		}
 	}
 	return dot;
@@ -450,7 +461,7 @@ char* HTTP_getVerb(const char* request)
 	}
 	size_t length = end - request;
 	char* verb = (char*)malloc(length + 1);
-	if(verb == NULL)
+	if (verb == NULL)
 	{
 		perror("Memory allocation failed");
 		return NULL;
@@ -479,7 +490,7 @@ char* HTTP_getUserAgent(const char* resquest, size_t size)
 		length = size - 1;
 	}
 	char* userAgent = (char*)malloc(length + 1);
-	if(userAgent == NULL)
+	if (userAgent == NULL)
 	{
 		perror("Memory allocation failed");
 		return NULL;
@@ -510,7 +521,7 @@ char* HTTP_getHost(const char* resquest)
 	}
 	length += end - start - 2;
 	char* host = (char*)malloc(length + 1);
-	if(host == NULL)
+	if (host == NULL)
 	{
 		perror("Memory allocation failed");
 		return NULL;
@@ -582,7 +593,7 @@ size_t HTTP_createHtmlDirectoryList(const wchar_t* path, const wchar_t* virtualP
 		else
 		{
 			data = realloc(data, (dataSize + localSize) * sizeof(wchar_t));
-			if(data == NULL)
+			if (data == NULL)
 			{
 				perror("Memory allocation failed");
 				free(localData);
@@ -604,7 +615,7 @@ size_t HTTP_createHtmlDirectoryList(const wchar_t* path, const wchar_t* virtualP
 	{
 		dataSize += hmtlDocumentSize + wcslen(emptyList) + virtualPathLen;
 		*html = malloc(dataSize * sizeof(wchar_t));
-		if(*html == NULL)
+		if (*html == NULL)
 		{
 			perror("Memory allocation failed");
 			return 0;
@@ -615,7 +626,7 @@ size_t HTTP_createHtmlDirectoryList(const wchar_t* path, const wchar_t* virtualP
 	{
 		dataSize += hmtlDocumentSize + virtualPathLen;
 		*html = malloc(dataSize * sizeof(wchar_t));
-		if(*html == NULL)
+		if (*html == NULL)
 		{
 			perror("Memory allocation failed");
 			free(data);
@@ -627,7 +638,7 @@ size_t HTTP_createHtmlDirectoryList(const wchar_t* path, const wchar_t* virtualP
 	return wcslen(*html) * sizeof(wchar_t);
 }
 
-void HTTP_splitRequest(char* request, uint64_t resquestSize, char ** header, char ** data, uint64_t *dataSize)
+void HTTP_splitRequest(char* request, uint64_t resquestSize, char** header, char** data, uint64_t* dataSize)
 {
 	char* end = strstr(request, "\r\n\r\n");
 	if (end == NULL)
@@ -639,7 +650,7 @@ void HTTP_splitRequest(char* request, uint64_t resquestSize, char ** header, cha
 	size_t headerSize = end - request + 4;
 	request[headerSize - 1] = '\0';
 	*header = request;
-	if(resquestSize == headerSize)
+	if (resquestSize == headerSize)
 	{
 		*data = NULL;
 		return;
