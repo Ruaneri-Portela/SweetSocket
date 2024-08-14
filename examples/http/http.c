@@ -8,68 +8,51 @@
 // Variável global para indicar quando o servidor deve ser fechado
 static int g_closing = 0;
 
-/**
- * Função para processar requisições de clientes.
- *
- * @param data Dados da solicitação.
- * @param size Tamanho dos dados da solicitação.
- * @param ctx Contexto global do socket.
- * @param thisClient Cliente que está fazendo a solicitação.
- * @param parms Parâmetros da solicitação HTTP.
- */
-void HTTP_processClientRequest(char* data, uint64_t size, struct SweetSocket_global_context* ctx, struct SweetSocket_peer_clients* thisClient, void* parms);
+void HTTP_processClientRequest(char *data, uint64_t size, struct SweetSocket_global_context *ctx, struct SweetSocket_peer_clients *thisClient, void *parms);
 
-/**
- * Função que lida com o sinal SIGINT (Ctrl+C).
- *
- * @param sig Número do sinal (não utilizado).
- */
 static void HTTP_handleSigint(int sig)
 {
-    (void)sig;  // Evita warnings para parâmetro não utilizado
-    g_closing = 1; // Indica que o servidor deve ser fechado
+    (void)sig;
+    g_closing = 1;
 }
 
-// Estruturas de dados usadas para passar parâmetros entre funções
-struct HTTP_upper_server_hosts {
-    struct SweetSocket_global_context* context;
-    struct HTTP_server_config* server;
+struct HTTP_upper_server_hosts
+{
+    struct SweetSocket_global_context *context;
+    struct HTTP_server_config *server;
 };
 
-struct HTTP_upper_server_ports {
-    struct HTTP_upper_server_hosts* up;
-    wchar_t* host;
+struct HTTP_upper_server_ports
+{
+    struct HTTP_upper_server_hosts *up;
+    wchar_t *host;
 };
 
-/**
- * Função para processar portas do servidor.
- *
- * @param actual Estrutura HTTP_object que contém a porta.
- * @param parms Parâmetros passados para a função.
- * @param count Número de itens processados.
- * @return Enumeração indicando se deve continuar ou parar a execução.
- */
-static enum HTTP_linked_list_actions HTTP_ports(struct HTTP_object* actual, void* parms, uint64_t count) {
-    (void) count;
-    struct HTTP_upper_server_ports* up = (struct HTTP_upper_server_ports*)parms;
-    struct SweetSocket_global_context* context = up->up->context;
-    uint16_t* port = (uint16_t*)actual->object;
+static enum HTTP_linked_list_actions HTTP_ports(struct HTTP_object *actual, void *parms, uint64_t count)
+{
+    (void)count;
+    struct HTTP_upper_server_ports *up = (struct HTTP_upper_server_ports *)parms;
+    struct SweetSocket_global_context *context = up->up->context;
+    uint16_t *port = (uint16_t *)actual->object;
     uint8_t type = 0;
 
     // Converter o endereço do host de wide string para string
     size_t len = wcslen(up->host) + 1;
-    char* host = (char*)malloc(len);
-    if (!host) {
+    char *host = (char *)malloc(len);
+    if (!host)
+    {
         perror("Failed to allocate memory for host");
         return ARRAY_STOP; // Interrompe a execução em caso de erro
     }
     wcstombs(host, up->host, len);
 
     // Determinar o tipo de socket com base no endereço do host
-    if (strchr(host, ':') != NULL) {
+    if (strchr(host, ':') != NULL)
+    {
         type = AF_INET6;
     }
-    else if (strchr(host, '.') != NULL) {
+    else if (strchr(host, '.') != NULL)
+    {
         type = AF_INET;
     }
 
@@ -79,32 +62,20 @@ static enum HTTP_linked_list_actions HTTP_ports(struct HTTP_object* actual, void
     return ARRAY_CONTINUE;
 }
 
-/**
- * Função para processar hosts do servidor.
- *
- * @param actual Estrutura HTTP_object que contém o host.
- * @param parms Parâmetros passados para a função.
- * @param count Número de itens processados.
- * @return Enumeração indicando se deve continuar ou parar a execução.
- */
-static enum HTTP_linked_list_actions HTTP_hosts(struct HTTP_object* actual, void* parms, uint64_t count) {
-    (void) count;
-    struct HTTP_upper_server_hosts* up = (struct HTTP_upper_server_hosts*)parms;
-    struct HTTP_upper_server_ports upPort = { up, (wchar_t*)actual->object };
+static enum HTTP_linked_list_actions HTTP_hosts(struct HTTP_object *actual, void *parms, uint64_t count)
+{
+    (void)count;
+    struct HTTP_upper_server_hosts *up = (struct HTTP_upper_server_hosts *)parms;
+    struct HTTP_upper_server_ports upPort = {up, (wchar_t *)actual->object};
 
     HTTP_arrayForEach(&up->server->ports, HTTP_ports, &upPort);
     return ARRAY_CONTINUE;
 }
 
-/**
- * Função principal do servidor HTTP.
- *
- * @return Código de saída do programa.
- */
 int main()
 {
     // Inicialização do ambiente do servidor
-    struct HTTP_server_envolvirment envolviment = { 0 };
+    struct HTTP_server_envolvirment envolviment = {0};
     envolviment.server = HTTP_loadConfig();
     envolviment.context = SweetSocket_initGlobalContext(PEER_SERVER);
     envolviment.context->useHeader = false;
@@ -114,23 +85,25 @@ int main()
     HTTP_loadPlugins(&envolviment);
 
     // Configuração de hosts e portas
-    struct HTTP_upper_server_hosts up = { envolviment.context, &envolviment.server };
+    struct HTTP_upper_server_hosts up = {envolviment.context, &envolviment.server};
     HTTP_arrayForEach(&envolviment.server.hosts, HTTP_hosts, &up);
 
     // Início do servidor
-    if (!SweetSocket_serverStartListening(envolviment.context, APPLY_ALL)) {
+    if (!SweetSocket_serverStartListening(envolviment.context, APPLY_ALL))
+    {
         SweetSocket_closeGlobalContext(&envolviment.context);
         perror("Failed to start listening");
         return 1;
     }
 
     // Aceitação de conexões e processamento de requisições
-    SweetSocket_serverStartAccepting(envolviment.context, APPLY_ALL, NULL, &HTTP_processClientRequest, &envolviment, NULL, ONLY_RECIVE);
+    SweetSocket_serverStartAccepting(envolviment.context, APPLY_ALL, NULL, (void *)&HTTP_processClientRequest, &envolviment, NULL, ONLY_RECIVE);
     signal(SIGINT, HTTP_handleSigint);
     wprintf(L"Press Ctrl+C to stop\n");
 
     // Loop principal do servidor
-    while (!g_closing) {
+    while (!g_closing)
+    {
         SweetThread_sleep(1000); // Pausa por 1 segundo
     }
 

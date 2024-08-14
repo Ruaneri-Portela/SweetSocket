@@ -1,5 +1,4 @@
 #include <http_plugin.h>
-#include <http_process.h>
 #include <jni.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -178,7 +177,7 @@ __declspec(dllexport) bool responsePoint(struct HTTP_request* requestInput, char
 	return true;
 }
 
-__declspec(dllexport) bool requestPoint(char** headerRequest)
+__declspec(dllexport) bool requestPoint(struct HTTP_request* request)
 {
 	return false;
 }

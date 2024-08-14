@@ -9,6 +9,21 @@
 #define SWEETTHREAD_RETURN_VALUE(a) \
     return a
 #define SWEETTHREAD_RETURN int32_t
+#define SWEEETTHREADWINDOWS
+#elif defined(__linux__) || defined(__unix__)
+#include <pthread.h>
+#define EXPORT
+#define SOCKET int
+#define SWEEETTHREADLINUX
+#define SWEETTHREAD_INIFINIT UINT32_MAX
+#define SWEETTHREAD_RETURN void *
+#define SWEETTHREAD_RETURN_VALUE(a) \
+    pthread_exit((void *)a)
+struct threadIdentifyer
+{
+    void *address;
+    void *id;
+};
 #endif
 
 #include <stdint.h>

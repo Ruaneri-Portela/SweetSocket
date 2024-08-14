@@ -1,14 +1,12 @@
 #include "http_config.h"
 #include "http_plugin.h"
-#include "http_process.h"
 #include "http_utils.h"
-#include <SweetSocket.h>
 #include <wchar.h>
 
-static void HTTP_transferData(struct HTTP_request* request, struct SweetSocket_global_context* context, struct SweetSocket_peer_clients* thisClient)
+static void HTTP_transferData(struct HTTP_request *request, struct SweetSocket_global_context *context, struct SweetSocket_peer_clients *thisClient)
 {
-	char* options = NULL;
-	char* type = NULL;
+	char *options = NULL;
+	char *type = NULL;
 	uint16_t command = 200;
 
 	// Abrir o arquivo
@@ -31,8 +29,8 @@ static void HTTP_transferData(struct HTTP_request* request, struct SweetSocket_g
 	// Verificar se é um intervalo de bytes (parcial)
 	if (request->startRange != -1 || request->endRange != -1)
 	{
-		const char* format = "Accept-Ranges: bytes\r\nContent-Range: bytes %lld-%lld/%lld\r\n";
-		options = (char*)malloc(100);
+		const char *format = "Accept-Ranges: bytes\r\nContent-Range: bytes %lld-%lld/%lld\r\n";
+		options = (char *)malloc(100);
 		if (!options)
 		{
 			CloseHandle(hFile);
@@ -67,7 +65,7 @@ static void HTTP_transferData(struct HTTP_request* request, struct SweetSocket_g
 
 	// Enviar o arquivo
 	int64_t sent = (fileSize.QuadPart > request->envolvirment->server.partialMaxFileBlock) ? request->envolvirment->server.partialMaxFileBlock : fileSize.QuadPart;
-	char* fileData = (char*)malloc(sent);
+	char *fileData = (char *)malloc(sent);
 	if (fileData == NULL)
 	{
 		CloseHandle(hFile);
@@ -95,8 +93,7 @@ static void HTTP_transferData(struct HTTP_request* request, struct SweetSocket_g
 	free(fileData);
 }
 
-
-static void HTTP_sendDirectoryListing(struct HTTP_request* request, struct SweetSocket_global_context* context, struct SweetSocket_peer_clients* thisClient)
+static void HTTP_sendDirectoryListing(struct HTTP_request *request, struct SweetSocket_global_context *context, struct SweetSocket_peer_clients *thisClient)
 {
 	if (!request->envolvirment->server.allowDirectoryListing)
 	{
@@ -104,7 +101,7 @@ static void HTTP_sendDirectoryListing(struct HTTP_request* request, struct Sweet
 		return;
 	}
 
-	wchar_t* html = NULL;
+	wchar_t *html = NULL;
 	size_t htmlSize = HTTP_createHtmlDirectoryList(request->filePath, request->virtualPath, &html);
 	if (htmlSize == 0)
 	{
@@ -113,12 +110,13 @@ static void HTTP_sendDirectoryListing(struct HTTP_request* request, struct Sweet
 	}
 
 	HTTP_sendHeaderResponse("text/html; charset=UTF-16", 200, htmlSize, NULL, context, thisClient->id);
-	SweetSocket_sendData((const char*)html, htmlSize, context, thisClient->id);
+	SweetSocket_sendData((const char *)html, htmlSize, context, thisClient->id);
 	free(html);
 }
 
-static struct HTTP_request HTTP_requestConstruct(char* data, uint64_t size, struct HTTP_server_envolvirment* envolvirment) {
-	struct HTTP_request request = { 0 };
+static struct HTTP_request HTTP_requestConstruct(char *data, uint64_t size, struct HTTP_server_envolvirment *envolvirment)
+{
+	struct HTTP_request request = {0};
 	HTTP_splitRequest(data, size, &request.header, &request.data, &request.dataSize);
 	request.verb = HTTP_getVerb(data);
 	request.host = HTTP_getHost(data);
@@ -131,16 +129,17 @@ static struct HTTP_request HTTP_requestConstruct(char* data, uint64_t size, stru
 	return request;
 }
 
-static void HTTP_requestDestroy(struct HTTP_request* request) {
+static void HTTP_requestDestroy(struct HTTP_request *request)
+{
 	free(request->filePath);
 	free(request->verb);
 	free(request->userAgent);
 	free(request->host);
 }
 
-void HTTP_processClientRequest(char* data, uint64_t size, struct SweetSocket_global_context* ctx, struct SweetSocket_peer_clients* thisClient, void* parms)
+void HTTP_processClientRequest(char *data, uint64_t size, struct SweetSocket_global_context *ctx, struct SweetSocket_peer_clients *thisClient, void *parms)
 {
-	struct HTTP_server_envolvirment* envolvirment = (struct HTTP_server_envolvirment*)parms;
+	struct HTTP_server_envolvirment *envolvirment = (struct HTTP_server_envolvirment *)parms;
 
 	struct HTTP_request request = HTTP_requestConstruct(data, size, envolvirment);
 
@@ -148,18 +147,18 @@ void HTTP_processClientRequest(char* data, uint64_t size, struct SweetSocket_glo
 
 	// Processar plugins
 	// Essa parte não está completamente implementanda ou definida
-	for (struct HTTP_object* plugin = envolvirment->plugins.base; plugin != NULL; plugin = plugin->next)
+	for (struct HTTP_object *plugin = envolvirment->plugins.base; plugin != NULL; plugin = plugin->next)
 	{
-		struct HTTP_plugin_metadata* metadata = (struct HTTP_plugin_metadata*)plugin->object;
+		struct HTTP_plugin_metadata *metadata = (struct HTTP_plugin_metadata *)plugin->object;
 		if (!metadata->isKeepLoaded)
 			metadata->entryPoint();
 
-		char* pluginContent = NULL;
-		char* pluginAdditionalHeader = NULL;
-		char* typeResponse = NULL;
+		char *pluginContent = NULL;
+		char *pluginAdditionalHeader = NULL;
+		char *typeResponse = NULL;
 		uint64_t pluginResponseSize = 0;
 		uint16_t pluginResponseCode = 0;
-		if (metadata->responsePoint(&request , &pluginContent, &pluginResponseSize, &pluginResponseCode, &typeResponse, &pluginAdditionalHeader))
+		if (metadata->responsePoint((void *)&request, &pluginContent, &pluginResponseSize, &pluginResponseCode, &typeResponse, &pluginAdditionalHeader))
 		{
 			HTTP_sendHeaderResponse(typeResponse, pluginResponseCode, pluginResponseSize, pluginAdditionalHeader, ctx, thisClient->id);
 			SweetSocket_sendData(pluginContent, pluginResponseSize, ctx, thisClient->id);
@@ -194,7 +193,7 @@ void HTTP_processClientRequest(char* data, uint64_t size, struct SweetSocket_glo
 		}
 
 		// Tentar arquivo padrão
-		wchar_t* defaultPage = HTTP_findDefaultFile(envolvirment->server.defaultPages, request.filePath);
+		wchar_t *defaultPage = HTTP_findDefaultFile(envolvirment->server.defaultPages, request.filePath);
 		if (defaultPage != NULL)
 		{
 			free(request.filePath);
