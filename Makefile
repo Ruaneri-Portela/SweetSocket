@@ -22,7 +22,9 @@ ifeq ($(OS),Windows_NT)
 	LDFLAGS += -lws2_32
 	TARGET := $(TARGET).dll
 	EXEC := .exe
-else
+else ifeq ($(shell uname),Linux)
+	LDFLAGS += -lpthread
+	TARGET := $(TARGET).so
 endif
 
 all: $(TARGET) libExport
