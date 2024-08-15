@@ -15,13 +15,18 @@ const struct HTTP_plugin_metadata *HTTP_loadPlugin(const wchar_t *pluginPath)
 	}
 
 	// Obter o endereço da função getManifest
-	struct HTTP_plugin_metadata *(*getManifest)(void) = (struct HTTP_plugin_metadata * (*)(void)) GetProcAddress(hDLL, "getManifest");
-	if (getManifest == NULL)
+	FARPROC procAddress = GetProcAddress(hDLL, "getManifest");
+	if (procAddress == NULL)
 	{
 		perror("Failed to get getManifest");
 		FreeLibrary(hDLL);
 		return NULL;
 	}
+
+	// Converter para ponteiro de função
+	struct HTTP_plugin_metadata *(*getManifest)(void);
+	*(FARPROC *)&getManifest = procAddress;
+
 	// Retornar o manifest do plugin
 	const struct HTTP_plugin_metadata *manifest = getManifest();
 	manifest->setModule(hDLL);

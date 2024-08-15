@@ -1,6 +1,31 @@
 #include "http_array.h"
 #include <stdlib.h>
 
+void HTTP_arrayPush(struct HTTP_linked_list *array, void *data)
+{
+    if (array == NULL || data == NULL)
+        return;
+
+    struct HTTP_object *newObj = calloc(1, sizeof(struct HTTP_object));
+    if (newObj == NULL)
+    {
+        perror("Failed to allocate memory for new object");
+        return;
+    }
+    newObj->object = data;
+    array->size++;
+    if (array->base == NULL && array->top == NULL)
+    {
+        array->base = array->top = newObj;
+    }
+    else
+    {
+        array->top->next = newObj;
+        newObj->prev = array->top;
+        array->top = newObj;
+    }
+}
+
 void *HTTP_arrayPop(struct HTTP_linked_list *array)
 {
     if (array == NULL || array->top == NULL)

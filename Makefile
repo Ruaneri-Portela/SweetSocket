@@ -33,10 +33,10 @@ $(TARGET): $(OBJS)
 	$(CC) -shared -fPIC $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(OUT_DIR)/%.o: $(SRC_DIR)/%.c | $(OUT_DIR)
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) -fPIC $(CFLAGS) -c -o $@ $<
 
 $(OUT_DIR)/%.o: $(SWEETTHREAD_DIR)/%.c | $(OUT_DIR)
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) -fPIC $(CFLAGS) -c -o $@ $<
 
 $(OUT_DIR):
 	mkdir -p $(OUT_DIR)
@@ -64,10 +64,10 @@ $(HTTPOUTDIR):
 	mkdir -p $(HTTPOUTDIR)
 
 clean-http:
-	rm -f $(HTTPTARGET) $(HTTPOUTDIR)/*.o
+	rm -rf $(HTTPTARGET) $(HTTPOUTDIR)/*.o
 
 clean:
-	rm -f $(OUT_DIR)/*.o $(TARGET) $(LIBA)
+	rm -rf $(OUT_DIR)/*.o $(TARGET) $(LIBA)
 	make clean-http
 
 http-rebuild: clean-http http

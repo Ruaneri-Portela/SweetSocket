@@ -15,7 +15,7 @@
 #ifdef _MSC_VER
 #pragma comment(lib, "ws2_32.lib")
 #endif
-#else if defined(__linux__) || defined(__unix__)
+#elif defined(__linux__) || defined(__unix__)
 #define LINUXSWEETSOCKET
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -81,7 +81,7 @@ struct SweetSocket_peer_data
 	uint8_t type;
 	char *addr;
 	uint16_t port;
-	uint64_t socket;
+	SOCKET socket;
 };
 
 struct SweetSocket_peers

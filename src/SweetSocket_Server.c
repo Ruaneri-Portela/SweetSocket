@@ -7,7 +7,7 @@ static bool SweetSocket_serverInvalidAction(struct SweetSocket_global_context *c
 	;
 }
 
-EXPORT bool SweetSocket_serverStartAccepting(struct SweetSocket_global_context *context, enum SweetSocket_apply_on serverID, void *functionSend, void *functionRecv, void *parmsRecv, void *parmsSend, enum SweetSocket_peer_pool_behaviour pool)
+EXPORT bool SweetSocket_serverStartAccepting(struct SweetSocket_global_context *context, enum SweetSocket_apply_on serverID, void (*functionSend)(void), void (*functionRecv)(char *, uint64_t, struct SweetSocket_global_context *, struct SweetSocket_peer_clients *, void *), void *parmsRecv, void *parmsSend, enum SweetSocket_peer_pool_behaviour pool)
 {
 	if (SweetSocket_serverInvalidAction(context))
 		return false;
@@ -23,8 +23,8 @@ EXPORT bool SweetSocket_serverStartAccepting(struct SweetSocket_global_context *
 		acceptContext->connection->enableRecivePool = (pool == ONLY_RECIVE || pool == BOTH) ? true : false;
 		acceptContext->connection->enableSendPool = (pool == ONLY_SEND || pool == BOTH) ? true : false;
 		acceptContext->context->status = STATUS_INIT;
-		acceptContext->functionRecv = functionRecv;
-		acceptContext->functionSend = functionSend;
+		acceptContext->functionRecv = (void*)functionRecv;
+		acceptContext->functionSend = (void *)functionSend;
 		acceptContext->intoExternaParmRecv = parmsRecv;
 		acceptContext->intoExternaParmSend = parmsSend;
 		acceptContext->connection->acceptThread = SweetThread_createThread(SweetSocket_acceptConnectionThread, (void *)acceptContext, true);

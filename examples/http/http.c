@@ -97,7 +97,7 @@ int main()
     }
 
     // Aceitação de conexões e processamento de requisições
-    SweetSocket_serverStartAccepting(envolviment.context, APPLY_ALL, NULL, (void *)&HTTP_processClientRequest, &envolviment, NULL, ONLY_RECIVE);
+    SweetSocket_serverStartAccepting(envolviment.context, APPLY_ALL, NULL, &HTTP_processClientRequest, &envolviment, NULL, ONLY_RECIVE);
     signal(SIGINT, HTTP_handleSigint);
     wprintf(L"Press Ctrl+C to stop\n");
 

@@ -40,42 +40,42 @@ void SweetThread_sleep(uint32_t milliseconds)
 }
 #elif defined(SWEEETTHREADLINUX)
 
-struct threadIdentifyer sweetThread_CreateThread(SWEETTHREAD_RETURN (*function)(void *functionParamets), void *argument, bool startNow)
+struct SweetThread_identifyer SweetThread_createThread(SWEETTHREAD_RETURN (*function)(void *functionParamets), void *argument, bool startNow)
 {
-    struct threadIdentifyer newThread;
+    struct SweetThread_identifyer newThread;
     pthread_create((pthread_t *)(&newThread.address), NULL, function, (void *)argument);
     return newThread;
 }
 
-int32_t sweetThread_Join(struct threadIdentifyer thread, uint32_t milliseconds)
+int32_t SweetThread_join(struct SweetThread_identifyer thread, uint32_t milliseconds)
 {
     pthread_join(*((pthread_t *)(thread.address)), NULL);
     return 0;
 }
 
-bool sweetThread_GetExitCode(struct threadIdentifyer thread, int32_t *exitCode)
+bool SweetThread_getExitCode(struct SweetThread_identifyer thread, int32_t *exitCode)
 {
     // pthread_join() não retorna o código de saída diretamente.
     // O valor pode ser obtido pela função que a thread retornou.
     return false; // Implementar de acordo com sua necessidade
 }
 
-void sweetThread_Resume(struct threadIdentifyer thread)
+void SweetThread_resume(struct SweetThread_identifyer thread)
 {
     // Não há suporte direto para retomar threads em Linux
 }
 
-void sweetThread_Suspend(struct threadIdentifyer thread)
+void SweetThread_suspend(struct SweetThread_identifyer thread)
 {
     // Não há suporte direto para suspender threads em Linux
 }
 
-bool sweetThread_IsRunning(struct threadIdentifyer thread)
+bool SweetThread_isRunning(struct SweetThread_identifyer thread)
 {
-    return sweetThread_Join(thread, 1) == -1;
+    return SweetThread_join(thread, 1) == -1;
 }
 
-void sweetThread_Sleep(uint32_t milliseconds)
+void SweetThread_sleep(uint32_t milliseconds)
 {
     struct timespec time;
     time.tv_sec = milliseconds / 1000;

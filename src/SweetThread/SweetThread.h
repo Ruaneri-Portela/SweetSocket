@@ -10,16 +10,22 @@
     return a
 #define SWEETTHREAD_RETURN int32_t
 #define SWEEETTHREADWINDOWS
+struct SweetThread_identifyer
+{
+    HANDLE address;
+    DWORD id;
+};
+
 #elif defined(__linux__) || defined(__unix__)
 #include <pthread.h>
 #define EXPORT
-#define SOCKET int
 #define SWEEETTHREADLINUX
 #define SWEETTHREAD_INIFINIT UINT32_MAX
 #define SWEETTHREAD_RETURN void *
 #define SWEETTHREAD_RETURN_VALUE(a) \
     pthread_exit((void *)a)
-struct threadIdentifyer
+
+struct SweetThread_identifyer
 {
     void *address;
     void *id;
@@ -29,13 +35,7 @@ struct threadIdentifyer
 #include <stdint.h>
 #include <stdbool.h>
 
-struct SweetThread_identifyer
-{
-    HANDLE address;
-    DWORD id;
-};
-
-EXPORT struct SweetThread_identifyer SweetThread_createThread(int32_t (*function)(void *functionParamets), void *argument, bool startNow);
+EXPORT struct SweetThread_identifyer SweetThread_createThread(SWEETTHREAD_RETURN (*function)(void *functionParamets), void *argument, bool startNow);
 
 EXPORT int32_t SweetThread_join(struct SweetThread_identifyer thread, uint32_t milliseconds);
 
