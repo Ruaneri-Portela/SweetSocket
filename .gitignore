@@ -371,7 +371,10 @@ FodyWeavers.xsd
 *.avi
 *.html
 *.conf
-include/
-srv/
 *.class
 *.dll
+*.so
+*.exe
+include/
+srv/
+build/

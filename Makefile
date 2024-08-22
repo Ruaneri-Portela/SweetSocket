@@ -13,7 +13,6 @@ src_files += $(wildcard $(sweetthread_dir)/*.c)
 sweetthread_dir = $(src_dir)/SweetThread
 
 obj = $(addprefix $(out_dir)/, $(notdir $(src_files:.c=.o)))
-lib := $(TARGET).a
 
 TARGET := $(out_dir)/$(TARGET)
 
@@ -24,6 +23,8 @@ else ifeq ($(shell uname),Linux)
 	LDFLAGS += -lpthread
 	TARGET := $(TARGET).so
 endif
+
+lib = $(out_dir)/lib$(LIBNAME)_static.a
 
 all: $(TARGET) $(lib)
 
@@ -39,10 +40,10 @@ $(out_dir)/%.o: $(sweetthread_dir)/%.c | $(out_dir)
 $(TARGET): $(obj) 
 	$(CC) -shared -fPIC $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(lib): $(objs)
-	ar rcs $@ $^
+$(lib): $(obj)
+	ar rcs $@ $^ 
 
 clean:
-	rm -rf $(out_dir)/*.o $(TARGET) $(lib)
+	rm -rf $(out_dir)
 
 .PHONY: all clean
