@@ -5,75 +5,44 @@ LDFLAGS =
 TARGET = SweetSocket
 LIBNAME := $(TARGET)
 
-OUT_DIR = out
-SRC_DIR = src
-SWEETTHREAD_DIR = $(SRC_DIR)/SweetThread
+out_dir = build
+src_dir = src
+src_files = $(wildcard $(src_dir)/*.c)
+src_files += $(wildcard $(sweetthread_dir)/*.c)
 
-SRC_FILES = $(wildcard $(SRC_DIR)/*.c)
-SRC_FILES += $(wildcard $(SWEETTHREAD_DIR)/*.c)
+sweetthread_dir = $(src_dir)/SweetThread
 
-OBJS = $(addprefix $(OUT_DIR)/, $(notdir $(SRC_FILES:.c=.o)))
+obj = $(addprefix $(out_dir)/, $(notdir $(src_files:.c=.o)))
+lib := $(TARGET).a
 
-TARGET := $(OUT_DIR)/$(TARGET)
-LIBA := $(TARGET).a
-EXEC =
+TARGET := $(out_dir)/$(TARGET)
 
 ifeq ($(OS),Windows_NT)
 	LDFLAGS += -lws2_32
 	TARGET := $(TARGET).dll
-	EXEC := .exe
 else ifeq ($(shell uname),Linux)
 	LDFLAGS += -lpthread
 	TARGET := $(TARGET).so
 endif
 
-all: $(TARGET) libExport
+all: $(TARGET) $(lib)
 
-$(TARGET): $(OBJS)
+$(out_dir):
+	mkdir -p $(out_dir)
+
+$(out_dir)/%.o: $(src_dir)/%.c | $(out_dir)
+	$(CC) -fPIC $(CFLAGS) -c -o $@ $<
+
+$(out_dir)/%.o: $(sweetthread_dir)/%.c | $(out_dir)
+	$(CC) -fPIC $(CFLAGS) -c -o $@ $<
+
+$(TARGET): $(obj) 
 	$(CC) -shared -fPIC $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(OUT_DIR)/%.o: $(SRC_DIR)/%.c | $(OUT_DIR)
-	$(CC) -fPIC $(CFLAGS) -c -o $@ $<
-
-$(OUT_DIR)/%.o: $(SWEETTHREAD_DIR)/%.c | $(OUT_DIR)
-	$(CC) -fPIC $(CFLAGS) -c -o $@ $<
-
-$(OUT_DIR):
-	mkdir -p $(OUT_DIR)
-
-libExport: $(LIBA)
-$(LIBA): $(OBJS)
+$(lib): $(objs)
 	ar rcs $@ $^
 
-HTTPDIR = examples/http
-HTTPSRC =  $(wildcard $(HTTPDIR)/*.c)
-HTTPOUTDIR = $(OUT_DIR)/http
-HTTPOBJS = $(addprefix $(HTTPOUTDIR)/, $(notdir $(HTTPSRC:.c=.o)))
-HTTPTARGET = $(OUT_DIR)/http$(EXEC)
-
-
-http: all $(HTTPTARGET)
-
-$(HTTPTARGET): $(HTTPOBJS)
-	$(CC) $(CFLAGS) -o $@ $^ $(LIBA) $(LDFLAGS)
-
-$(HTTPOUTDIR)/%.o: $(HTTPDIR)/%.c | $(HTTPOUTDIR)
-	$(CC) $(CFLAGS) -c -o $@ $< -I$(SRC_DIR)
-
-$(HTTPOUTDIR):
-	mkdir -p $(HTTPOUTDIR)
-
-clean-http:
-	rm -rf $(HTTPTARGET) $(HTTPOUTDIR)/*.o
-
 clean:
-	rm -rf $(OUT_DIR)/*.o $(TARGET) $(LIBA)
-	make clean-http
-
-http-rebuild: clean-http http
-	echo "Rebuild http"
-
-all-rebuild: clean all
-	echo "Rebuild all"
+	rm -rf $(out_dir)/*.o $(TARGET) $(lib)
 
 .PHONY: all clean
