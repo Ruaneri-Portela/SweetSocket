@@ -47,7 +47,7 @@ static void SweetSocket_destroyDataPool(struct SweetSocket_data_pool *data)
 	free(data);
 }
 
-struct SweetSocket_global_context *SweetSocket_initGlobalContext(enum SweetSocket_peer_type type,bool useHeader)
+struct SweetSocket_global_context *SweetSocket_initGlobalContext(enum SweetSocket_peer_type type,bool useHeader, int64_t maxConnections)
 {
 #ifdef WINSWEETSOCKET
 	if (*((int *)(&wsaData)) == 0 && (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0))
@@ -56,7 +56,7 @@ struct SweetSocket_global_context *SweetSocket_initGlobalContext(enum SweetSocke
 	struct SweetSocket_global_context *context = (struct SweetSocket_global_context *)calloc(1, sizeof(struct SweetSocket_global_context));
 	context->status = STATUS_IN_INIT;
 	context->type = type;
-	context->maxConnections = INT64_MAX;
+	context->maxConnections = maxConnections;
 	context->useHeader = useHeader;
 	return context;
 }

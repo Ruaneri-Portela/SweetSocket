@@ -139,7 +139,7 @@ SWEETTHREAD_RETURN SweetSocket_acceptConnectionThread(void *arg)
 			free(client);
 			continue;
 		}
-		if (acceptContext->context->connectionsAlive > acceptContext->context->maxConnections)
+		if (acceptContext->context->connectionsAlive >= acceptContext->context->maxConnections && !(acceptContext->context->maxConnections < 0))
 		{
 			// Send ACk to notificate that the server is full
 			closesocket(client->socket);
