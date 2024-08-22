@@ -156,7 +156,7 @@ struct SweetSocket_data_context_thread
 #include "SweetSocket_Client.h"
 #include "SweetSocket_Server.h"
 
-EXPORT struct SweetSocket_global_context *SweetSocket_initGlobalContext(enum SweetSocket_peer_type type, bool useHeader, int64_t maxConnections);
+EXPORT struct SweetSocket_global_context *SweetSocket_initGlobalContext(enum SweetSocket_peer_type type, bool useHeader);
 
 EXPORT bool SweetSocket_closeGlobalContext(struct SweetSocket_global_context **context);
 
