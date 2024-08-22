@@ -8,13 +8,9 @@
 #if defined(_WIN32) || defined(_WIN64)
 #define WINSWEETSOCKET
 #define WIN32_LEAN_AND_MEAN
-#undef UNICODE
 #include <winsock2.h>
-#include <ws2tcpip.h>
+#include <ws2tcpip.h> 
 #define EXPORT __declspec(dllexport)
-#ifdef _MSC_VER
-#pragma comment(lib, "ws2_32.lib")
-#endif
 #elif defined(__linux__) || defined(__unix__)
 #define LINUXSWEETSOCKET
 #include <sys/types.h>
