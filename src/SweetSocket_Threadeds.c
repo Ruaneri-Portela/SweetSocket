@@ -152,7 +152,6 @@ SWEETTHREAD_RETURN SweetSocket_acceptConnectionThread(void *arg)
 		acceptContext->context->connectionsAlive++;
 		struct SweetSocket_peer_clients *newClient = (struct SweetSocket_peer_clients *)calloc(1, sizeof(struct SweetSocket_peer_clients));
 		newClient->client = client;
-		newClient->id = acceptContext->context->minClientID++;
 		if (acceptContext->connection->enableRecivePool)
 		{
 			// Start recive thread
@@ -174,16 +173,31 @@ SWEETTHREAD_RETURN SweetSocket_acceptConnectionThread(void *arg)
 			sendContext->connection->sendThread = SweetThread_createThread(SweetSocket_sendThread, (void *)sendContext, true);
 		}
 		//
+		int minorId = acceptContext->context->minClientID;
 		if (acceptContext->context->clients == NULL)
 		{
 			acceptContext->context->clients = newClient;
+			newClient->id = minorId;
 			continue;
 		}
-		for (struct SweetSocket_peer_clients *current = acceptContext->context->clients; current != NULL; current = current->next)
+		for (struct SweetSocket_peer_clients *current = acceptContext->context->clients, *previous = NULL; current != NULL; previous = current,current = current->next)
 		{
+			if (current->id > minorId) {
+				newClient->next = current;
+				newClient->id = minorId;
+				if (previous == NULL)
+				{
+					acceptContext->context->clients = newClient;
+					break;
+				}
+				previous->next = newClient;
+				break;
+			}
+			minorId = current->id + 1;
 			if (current->next == NULL)
 			{
 				current->next = newClient;
+				newClient->id = minorId;
 				break;
 			}
 		}
