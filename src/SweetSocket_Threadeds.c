@@ -47,7 +47,7 @@ SWEETTHREAD_RETURN SweetSocket_reciveThread(void *arg)
 		size = SWEETSOCKET_BUFFER_SIZE;
 	}
 	permSize = size;
-	while (reciveContext->context->status == STATUS_INIT && !reciveContext->connection->closing && reciveContext->connection->client != NULL)
+	while (reciveContext->context->status == STATUS_INIT && (reciveContext->connection->closing == 0) && (reciveContext->connection->client != NULL))
 	{
 		int64_t recived = SweetSocket_internalRecive(&data, size, reciveContext->connection->client->socket);
 		if (reciveContext->context->status != STATUS_INIT || recived == 0 || reciveContext->connection->closing)
@@ -83,9 +83,11 @@ SWEETTHREAD_RETURN SweetSocket_reciveThread(void *arg)
 		{
 			void *ptr = (basePointer == NULL ? data : basePointer);
 			uint64_t dataSize = (basePointer == NULL ? recived : (reciveContext->context->useHeader ? recived : recived + permSize));
-			reciveContext->function(ptr, dataSize, reciveContext->context, reciveContext->connection, reciveContext->intoExternaParm);
+			enum SweetSocket_sweet_callback_status status = reciveContext->function(ptr, dataSize, reciveContext->context, reciveContext->connection, reciveContext->intoExternaParm);
 			free(ptr);
 			data = NULL;
+			if (status == SWEET_SOCKET_CALLBACK_CLOSE || status == SWEET_SOCKET_CALLBACK_ERROR)
+				break;
 		}
 		else
 		{

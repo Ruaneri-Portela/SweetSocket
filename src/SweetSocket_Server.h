@@ -1,3 +1,3 @@
-EXPORT bool SweetSocket_serverStartAccepting(struct SweetSocket_global_context *context, enum SweetSocket_apply_on serverID, void (*functionSend)(void), void (*functionRecv)(char *, uint64_t, struct SweetSocket_global_context *, struct SweetSocket_peer_clients *, void *), void *parmsRecv, void *parmsSend, enum SweetSocket_peer_pool_behaviour pool);
+EXPORT bool SweetSocket_serverStartAccepting(struct SweetSocket_global_context *context, enum SweetSocket_apply_on serverID,  enum SweetSocket_sweet_callback_status (*functionSend)(void),  enum SweetSocket_sweet_callback_status (*functionRecv)(char *, uint64_t, struct SweetSocket_global_context *, struct SweetSocket_peer_clients *, void *), void *parmsRecv, void *parmsSend, enum SweetSocket_peer_pool_behaviour pool);
 
 EXPORT bool SweetSocket_serverStartListening(struct SweetSocket_global_context *context, enum SweetSocket_apply_on serverID);

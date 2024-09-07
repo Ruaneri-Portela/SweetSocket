@@ -34,6 +34,12 @@
 #define EXPORT
 #endif
 
+enum SweetSocket_sweet_callback_status{
+	SWEET_SOCKET_CALLBACK_OK = 0,
+	SWEET_SOCKET_CALLBACK_CLOSE = 1,
+	SWEET_SOCKET_CALLBACK_ERROR = 2
+};
+
 enum SweetSocket_sweet_status_code
 {
 	STATUS_NOT_INIT = 0,
@@ -139,9 +145,9 @@ struct SweetSocket_accept_data_context_thread
 {
 	struct SweetSocket_global_context *context;
 	struct SweetSocket_peer_connects *connection;
-	void (*functionSend)(void *, uint64_t, struct SweetSocket_global_context *, struct SweetSocket_peer_clients *, void *);
+	enum SweetSocket_sweet_callback_status (*functionSend)(void *, uint64_t, struct SweetSocket_global_context *, struct SweetSocket_peer_clients *, void *);
 	void *intoExternaParmRecv;
-	void (*functionRecv)(void *, uint64_t, struct SweetSocket_global_context *, struct SweetSocket_peer_clients *, void *);
+	enum SweetSocket_sweet_callback_status (*functionRecv)(void *, uint64_t, struct SweetSocket_global_context *, struct SweetSocket_peer_clients *, void *);
 	void *intoExternaParmSend;
 };
 
@@ -149,7 +155,7 @@ struct SweetSocket_data_context_thread
 {
 	struct SweetSocket_global_context *context;
 	struct SweetSocket_peer_clients *connection;
-	void (*function)(void *, uint64_t, struct SweetSocket_global_context *, struct SweetSocket_peer_clients *, void *);
+	enum SweetSocket_sweet_callback_status (*function)(void *, uint64_t, struct SweetSocket_global_context *, struct SweetSocket_peer_clients *, void *);
 	void *intoExternaParm;
 };
 
